@@ -3,18 +3,23 @@ from modules.audio_listener import AudioListener
 from modules.page import Page
 
 
-def on_final(english_text):
-    spanish_text = translator.translate(english_text)
-    page.add_traduction(english_text, spanish_text)
+def on_translated_enbounced(text_translated):    
+    page.update_second_text(text_translated)
+
 
 
 def on_partial(text):
     page.update_current_text(text)    
-    spanish_text = translator.translate(text)
-    page.update_second_text(spanish_text)
+    translator.translate_debounced(text, callback=on_translated_enbounced)    
+
+def on_final(english_text):
+    spanish_text = translator.translate(english_text)
+    page.add_traduction(english_text, spanish_text)
 
 def on_current(text):
     print(text, end="", flush=True)
+
+
 
 # translator service
 translator = EnglishToSpanishTranslator()
