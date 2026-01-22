@@ -1,0 +1,5 @@
+vosk
+sounddevice
+transformers
+torch
+sentencepiece
