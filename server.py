@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from modules.audio_listener import SpeechProcessor
 from modules.translate import EnglishToSpanishTranslator
+from service.audio_service import AudioService
 from modules.model_selector import ensure_model, get_models_info, AVAILABLE_MODELS, MODELS_DIR
 import json
 import asyncio
@@ -34,7 +35,7 @@ app.add_middleware(
 )
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="www"), name="static")
+app.mount("/static", StaticFiles(directory="www/static"), name="static")
 
 @app.get("/")
 async def read_index():
@@ -72,84 +73,50 @@ if default_model_info:
 @app.websocket("/ws/stream")
 async def websocket_endpoint(websocket: WebSocket, input_lang: str = "2", output_lang: str = "es"):
     """
-    input_lang: NOW EXPECTS A MODEL ID (e.g. "1", "2") from AVAILABLE_MODELS.
-                Defaults to "2" (English complete) if not found.
-    output_lang: Language code for translation (e.g. "es").
+    WebSocket endpoint for audio streaming with speech recognition and translation.
+    
+    Args:
+        input_lang: Model ID from AVAILABLE_MODELS (e.g. "1", "2")
+        output_lang: Target language code for translation (e.g. "es")
     """
     await websocket.accept()
     loop = asyncio.get_running_loop()
     
-    # Validate input model (input_lang parameter now acts as model_id)
-    model_id = input_lang
-    if model_id not in AVAILABLE_MODELS:
-        print(f"Invalid model ID: {model_id}, defaulting to {DEFAULT_INPUT_MODEL_ID}")
-        model_id = DEFAULT_INPUT_MODEL_ID
+    # Initialize audio service
+    service = AudioService(
+        model_id=input_lang,
+        output_lang=output_lang,
+        translator_cache=translator_cache,
+        default_model_id=DEFAULT_INPUT_MODEL_ID
+    )
     
-    model_info = AVAILABLE_MODELS[model_id]
-    model_path = os.path.join(MODELS_DIR, model_info["name"])
-    input_lang_code = model_info.get("code", "en") # Extract actual language code for specific translation logic
-    
-    print(f"Client connected. Model ID: {model_id} ({model_info['lang']}), Input Code: {input_lang_code}, Output: {output_lang}")
-    
-    # Ensure model exists (might block briefly if not downloaded)
-    await asyncio.to_thread(ensure_model, model_path)
-    
-    # Get or Initialize Translator
-    translator_key = f"{input_lang_code}-{output_lang}"
-    translator = None
-    
-    if input_lang_code != output_lang:
-        if translator_key not in translator_cache:
-            print(f"Initializing translator for {translator_key}...")
-            # This loads the model, might take time - Run in thread to allow heartbeat
-            translator_cache[translator_key] = await asyncio.to_thread(EnglishToSpanishTranslator, source_lang=input_lang_code, target_lang=output_lang)
-        translator = translator_cache[translator_key]
-
-
     try:
-        # Initialize processor for this session
-        # SAMPLE_RATE should ideally be negotiated, but we default to 16000
-        processor = SpeechProcessor(model_path, 16000)
+        # Setup service (download models, initialize translator)
+        await service.setup()
         
+        # Define message sender
         async def send_message(msg):
             try:
                 await websocket.send_json(msg)
             except Exception as e:
                 print(f"Error sending message: {e}")
-
-        def on_final(text, conf):
-            # Blocking translation (runs in executor thread)
-            try:
-                print(f"Final ({input_lang_code}): {text}")
-                
-                spanish_text = text # Default if no translation
-                if translator:
-                     spanish_text = translator.translate(text)
-                
-                msg = {
-                    "type": "final",
-                    "original": text,
-                    "translation": spanish_text,
-                    "confidence": conf,
-                    "input_lang": input_lang_code,
-                    "output_lang": output_lang
-                }
-                asyncio.run_coroutine_threadsafe(send_message(msg), loop)
-            except Exception as e:
-                print(f"Translation error: {e}")
-
-        def on_partial_wrapper(text):
-            msg = {"type": "partial", "original": text}
-            asyncio.run_coroutine_threadsafe(send_message(msg), loop)
-
-        processor.set_on_final(on_final)
-        processor.set_on_partial(on_partial_wrapper)
         
-        print(f"Ready to process audio stream ({input_lang_code} -> {output_lang})...")
+        # Register callbacks
+        def on_partial(message):
+            asyncio.run_coroutine_threadsafe(send_message(message), loop)
+        
+        def on_final(message):
+            asyncio.run_coroutine_threadsafe(send_message(message), loop)
+        
+        service.set_on_partial(on_partial)
+        service.set_on_final(on_final)
+        
+        print(f"Ready to process audio stream ({service.input_lang_code} -> {output_lang})...")
+        
+        # Process incoming audio stream
         while True:
             data = await websocket.receive_bytes()
-            # Run blocking Vosk process in a separate thread
-            await asyncio.to_thread(processor.process, data)
+            await service.process_audio(data)
             
     except WebSocketDisconnect:
         print("Client disconnected")

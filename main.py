@@ -1,6 +1,6 @@
 from modules.translate import EnglishToSpanishTranslator
 from modules.audio_listener import AudioListener
-from modules.page import Page
+from view.page import Page
 from modules.logger import TranscriptionLogger
 from modules.model_selector import ensure_model
 

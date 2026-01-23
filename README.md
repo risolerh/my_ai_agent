@@ -59,12 +59,17 @@ Then visit **http://localhost:8000/** to verify operation with the built-in test
 - `server.py`: Punto de entrada para la **Versión Servidor (API)**. Levanta un servidor WebSocket para permitir transcripción y traducción remota.
 - `DEPLOY.md` / `DOCKER_INSTRUCTIONS.md`: Guías de instalación y despliegue del proyecto.
 
+### 📂 service/ (Servicios)
+- `audio_service.py`: Servicio de procesamiento de audio para el servidor WebSocket.
+
+### 📂 view/ (Capa de Presentación)
+- `page.py`: Interfaz Gráfica de Usuario (GUI) con `tkinter`.
+
 ### 📂 modules/ (Lógica Principal)
 - `audio_listener.py`: Captura audio en tiempo real y procesa voz a texto (STT) usando Vosk.
 - `audio_selector.py`: Maneja la selección de dispositivos de entrada de audio.
 - `model_selector.py`: Gestiona la descarga y selección de modelos Vosk.
 - `translate.py`: Lógica de traducción usando modelos MarianMT (Helsinki-NLP).
-- `page.py`: Interfaz Gráfica de Usuario (GUI) con `tkinter`.
 - `logger.py`: Utilidad para registro de logs.
 
 ### 📂 Otros Directorios
