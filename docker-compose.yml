@@ -1,0 +1,17 @@
+services:
+  stt-api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+    environment:
+      - VOSK_MODEL_PATH=./models/vosk-model-en-us-0.22
+      - SAMPLE_RATE=16000

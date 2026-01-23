@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STT & Translation API Test</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        #status { font-weight: bold; padding: 10px; border-radius: 5px; }
+        .partial { color: gray; font-style: italic; }
+        .final { color: black; font-weight: bold; margin-top: 10px; }
+        .translation { color: blue; margin-bottom: 10px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        #log { border: 1px solid #ccc; padding: 10px; height: 400px; overflow-y: scroll; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>🎙️ STT & Translation API Test</h1>
+    
+    <div style="margin-bottom: 20px;">
+        <button id="startBtn" onclick="startStream()">Start Streaming</button>
+        <button id="stopBtn" onclick="stopStream()" disabled>Stop Streaming</button>
+        <span id="status" style="background-color: #eee;">Ready</span>
+    </div>
+
+    <div id="log"></div>
+
+    <script>
+        let ws;
+        let audioContext;
+        let processor;
+        let stream;
+        let globalStream;
+
+        const statusEl = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const logEl = document.getElementById('log');
+
+        let currentPartialEl = null;
+
+        function setStatus(msg, color) {
+            statusEl.textContent = msg;
+            statusEl.style.backgroundColor = color;
+        }
+
+        async function startStream() {
+            try {
+                // Initialize WebSocket
+                ws = new WebSocket('ws://localhost:8000/ws/stream');
+                ws.binaryType = 'arraybuffer';
+
+                ws.onopen = () => {
+                    setStatus('Connected', '#aaffaa');
+                    startAudio();
+                };
+
+                ws.onclose = () => {
+                    setStatus('Disconnected', '#ffaaaa');
+                    stopAudio();
+                };
+
+                ws.onerror = (e) => {
+                    console.error("WS Error", e);
+                    setStatus('Error', '#ffaa00');
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                };
+
+            } catch (e) {
+                console.error(e);
+                alert("Error starting: " + e.message);
+            }
+        }
+
+        async function startAudio() {
+            try {
+                // Request 16kHz audio specifically
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { 
+                        channelCount: 1, 
+                        sampleRate: 16000 
+                    } 
+                });
+                globalStream = stream;
+
+                // Create AudioContext at 16k
+                audioContext = new AudioContext({ sampleRate: 16000 });
+                const source = audioContext.createMediaStreamSource(stream);
+                
+                // Buffer size 4096 (approx 250ms at 16k)
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+
+                processor.onaudioprocess = (e) => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        // Convert float32 [-1, 1] to int16 PCM
+                        const buffer = new ArrayBuffer(inputData.length * 2);
+                        const view = new DataView(buffer);
+                        for (let i = 0; i < inputData.length; i++) {
+                            const s = Math.max(-1, Math.min(1, inputData[i]));
+                            view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true); // true for little-endian
+                        }
+                        ws.send(buffer);
+                    }
+                };
+
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+            } catch (e) {
+                console.error("Audio access error", e);
+                alert("Could not access microphone: " + e.message);
+                ws.close();
+            }
+        }
+
+        function stopStream() {
+            if (globalStream) {
+                globalStream.getTracks().forEach(track => track.stop());
+            }
+            if (audioContext) {
+                audioContext.close();
+            }
+            if (ws) {
+                ws.close();
+            }
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            setStatus('Stopped', '#eee');
+        }
+
+        function handleMessage(data) {
+            if (data.type === 'partial') {
+                if (!currentPartialEl) {
+                    currentPartialEl = document.createElement('div');
+                    currentPartialEl.className = 'partial';
+                    logEl.appendChild(currentPartialEl);
+                }
+                currentPartialEl.textContent = ">> " + data.original;
+                logEl.scrollTop = logEl.scrollHeight;
+            } 
+            else if (data.type === 'final') {
+                if (currentPartialEl) {
+                    currentPartialEl.remove();
+                    currentPartialEl = null;
+                }
+                
+                const container = document.createElement('div');
+                container.innerHTML = `
+                    <div class="final">🇬🇧 ${data.original} <span style="font-size:0.8em;color:#aaa">(${data.confidence.toFixed(2)})</span></div>
+                    <div class="translation">🇪🇸 ${data.translation}</div>
+                    <hr/>
+                `;
+                logEl.appendChild(container);
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+        }
+    </script>
+</body>
+</html>
