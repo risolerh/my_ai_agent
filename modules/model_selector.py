@@ -1,6 +1,9 @@
 import os
 import urllib.request
 import zipfile
+import shutil
+
+# https://alphacephei.com/vosk/models
 
 MODELS_DIR = "./models"
 
@@ -71,6 +74,54 @@ def download_model(model_info):
     print(f"\n  Descargando {model_info['name']}...")
     download_with_progress(model_info["url"], zip_path)
     extract_model(zip_path)
+
+
+def ensure_model(model_path: str):
+    """
+    Checks if the model exists, if not, tries to download it.
+    Uses the logic from audio_listener but adapted to use existing helpers.
+    """
+    if os.path.exists(model_path) and os.path.isdir(model_path):
+        if any(os.scandir(model_path)):
+            return
+    
+    print(f"Model not found at {model_path}. Attempting to download...")
+    
+    # Normalize path to get clean model name and base dir
+    norm_path = os.path.normpath(model_path)
+    model_name = os.path.basename(norm_path)
+    base_dir = os.path.dirname(norm_path)
+    
+    if base_dir and not os.path.exists(base_dir):
+        os.makedirs(base_dir, exist_ok=True)
+        
+    # Construct URL - assuming standard vosk model URL structure
+    # Note: This assumes the model folder name matches the zip file name hosted on alphacephei
+    url = f"https://alphacephei.com/vosk/models/{model_name}.zip"
+    
+    zip_path = os.path.join(base_dir if base_dir else ".", f"{model_name}.zip")
+    
+    try:
+        print(f"Downloading from {url}...")
+        download_with_progress(url, zip_path)
+        
+        # extract_model function in this file hardcodes extraction to MODELS_DIR.
+        # We need to extract to base_dir.
+        # So we should probably modify extract_model or just do the extraction here to be safe and flexible.
+        # Let's use the explicit extraction here to support any base_dir.
+        print("Extracting model...")
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(base_dir if base_dir else ".")
+        
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+            
+        print(f"Model '{model_name}' successfully installed.")
+        
+    except Exception as e:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        raise RuntimeError(f"Failed to download/install model '{model_name}': {e}")
 
 
 def select_vosk_model():

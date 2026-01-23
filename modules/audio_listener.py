@@ -6,16 +6,11 @@ import json
 import threading
 import numpy as np
 import os
-import requests
-import zipfile
-import shutil
-
 
 from typing import Callable, Optional
 
 class SpeechProcessor:
     def __init__(self, model_path: str, sample_rate: int):
-        self._ensure_model(model_path)
         abs_model_path = os.path.abspath(model_path)
         self.model = vosk.Model(abs_model_path)
         self.recognizer = vosk.KaldiRecognizer(self.model, sample_rate)
@@ -25,39 +20,7 @@ class SpeechProcessor:
         self._on_current: Optional[Callable[[str], None]] = None
         self.last_partial = ""
 
-    def _ensure_model(self, model_path: str):
-        """Checks if the model exists, if not, tries to download it."""
-        if os.path.exists(model_path) and os.path.isdir(model_path):
-            if any(os.scandir(model_path)):
-                return
-        
-        print(f"Model not found at {model_path}. Attempting to download...")
-        model_name = os.path.basename(os.path.normpath(model_path))
-        base_dir = os.path.dirname(os.path.normpath(model_path))
-        
-        if base_dir and not os.path.exists(base_dir):
-            os.makedirs(base_dir, exist_ok=True)
-            
-        url = f"https://alphacephei.com/vosk/models/{model_name}.zip"
-        print(f"Downloading from {url}...")
-        
-        try:
-            zip_path = os.path.join(base_dir if base_dir else ".", f"{model_name}.zip")
-            with requests.get(url, stream=True) as r:
-                r.raise_for_status()
-                with open(zip_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-            
-            print("Extracting model...")
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(base_dir if base_dir else ".")
-            os.remove(zip_path)
-            print(f"Model '{model_name}' successfully installed.")
-        except Exception as e:
-            if os.path.exists(zip_path):
-                os.remove(zip_path)
-            raise RuntimeError(f"Failed to download/install model '{model_name}': {e}")
+
 
     def set_on_final(self, callback: Callable[[str, float], None]):
         self._on_final = callback

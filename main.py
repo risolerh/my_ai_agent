@@ -2,6 +2,8 @@ from modules.translate import EnglishToSpanishTranslator
 from modules.audio_listener import AudioListener
 from modules.page import Page
 from modules.logger import TranscriptionLogger
+from modules.model_selector import ensure_model
+
 
 
 # Variables globales
@@ -55,6 +57,7 @@ def start_listener(model_path, device_id, latency=0.05):
         listener.stop()
     
     try:
+        ensure_model(model_path)
         listener = AudioListener(
             model_path=model_path,
             device_id=device_id,

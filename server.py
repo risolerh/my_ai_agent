@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from modules.audio_listener import SpeechProcessor
 from modules.translate import EnglishToSpanishTranslator
+from modules.model_selector import ensure_model
 import json
 import asyncio
 import os
@@ -30,6 +31,10 @@ async def read_index():
 # Use the same default model paths as the desktop app
 VOSK_MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "./models/vosk-model-en-us-0.22")
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", 16000))
+
+# Ensure model exists before we start anything
+print(f"Ensuring model exists at {VOSK_MODEL_PATH}...")
+ensure_model(VOSK_MODEL_PATH)
 
 print("Loading Translator...")
 translator = EnglishToSpanishTranslator()

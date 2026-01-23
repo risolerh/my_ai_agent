@@ -55,8 +55,20 @@ Then visit **http://localhost:8000/** to verify operation with the built-in test
 ---
 
 ## 📂 Project Structure
-- `main.py`: Entry point for the Desktop GUI.
-- `server.py`: Entry point for the FastAPI WebSocket Server.
-- `modules/`: Core logic (Audio detection, Translation, GUI).
-- `models/`: Directory where Vosk/MarianMT models are stored.
-- `docker-compose.yml`: Docker orchestration config.
+- `main.py`: Punto de entrada para la **Versión de Escritorio**. Inicia la interfaz gráfica y conecta los módulos de audio y traducción.
+- `server.py`: Punto de entrada para la **Versión Servidor (API)**. Levanta un servidor WebSocket para permitir transcripción y traducción remota.
+- `DEPLOY.md` / `DOCKER_INSTRUCTIONS.md`: Guías de instalación y despliegue del proyecto.
+
+### 📂 modules/ (Lógica Principal)
+- `audio_listener.py`: Captura audio en tiempo real y procesa voz a texto (STT) usando Vosk.
+- `audio_selector.py`: Maneja la selección de dispositivos de entrada de audio.
+- `model_selector.py`: Gestiona la descarga y selección de modelos Vosk.
+- `translate.py`: Lógica de traducción usando modelos MarianMT (Helsinki-NLP).
+- `page.py`: Interfaz Gráfica de Usuario (GUI) con `tkinter`.
+- `logger.py`: Utilidad para registro de logs.
+
+### 📂 Otros Directorios
+- `models/`: Almacena los modelos de IA descargados.
+- `utils/`: Scripts de utilidad (`listener_test.py`, etc.).
+- `www/`: Archivos estáticos para la interfaz web del servidor.
+- `docker-compose.yml`: Configuración para orquestación con Docker.
