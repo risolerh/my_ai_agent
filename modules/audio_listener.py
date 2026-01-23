@@ -5,6 +5,11 @@ import vosk
 import json
 import threading
 import numpy as np
+import os
+import requests
+import zipfile
+import shutil
+
 
 from typing import Callable, Optional
 
@@ -19,7 +24,10 @@ class AudioListener:
         device_id: int = None,
         latency: float = 0.05
     ):
-        self.model = vosk.Model(model_path)
+        self._ensure_model(model_path)
+        # Ensure absolute path for Vosk
+        abs_model_path = os.path.abspath(model_path)
+        self.model = vosk.Model(abs_model_path)
         self.device_id = device_id
         
         # Auto-detect sample rate from device
@@ -44,6 +52,51 @@ class AudioListener:
         self._on_current: Optional[Callable[[str], None]] = None
         self._on_audio_level: Optional[Callable[[float], None]] = None  # Audio level callback
         self._thread: Optional[threading.Thread] = None
+
+    def _ensure_model(self, model_path: str):
+        """Checks if the model exists, if not, tries to download it."""
+        if os.path.exists(model_path) and os.path.isdir(model_path):
+            # Check if it's not empty (basic check)
+            if any(os.scandir(model_path)):
+                return
+        
+        print(f"Model not found at {model_path}. Attempting to download...")
+        
+        # Extract model name and base directory
+        # model_path e.g. "./models/vosk-model-small-es-0.42"
+        model_name = os.path.basename(os.path.normpath(model_path))
+        base_dir = os.path.dirname(os.path.normpath(model_path))
+        
+        # Create base directory (e.g. ./models) if it doesn't exist
+        if base_dir and not os.path.exists(base_dir):
+            os.makedirs(base_dir, exist_ok=True)
+            
+        # URL construction (assuming standard Vosk URL pattern)
+        url = f"https://alphacephei.com/vosk/models/{model_name}.zip"
+        print(f"Downloading from {url}...")
+        
+        try:
+            zip_path = os.path.join(base_dir if base_dir else ".", f"{model_name}.zip")
+            
+            with requests.get(url, stream=True) as r:
+                r.raise_for_status()
+                with open(zip_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            
+            print("Extracting model...")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(base_dir if base_dir else ".")
+            
+            os.remove(zip_path)
+            print(f"Model '{model_name}' successfully installed.")
+            
+        except Exception as e:
+            # Clean up partial downloads if needed
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+            raise RuntimeError(f"Failed to download/install model '{model_name}': {e}")
+
 
 
     def set_on_final(self, callback: Callable[[str, float], None]):

@@ -1,5 +1,6 @@
 import threading
 from transformers import MarianMTModel, MarianTokenizer
+import torch
 
 import queue
 import time
@@ -10,14 +11,24 @@ class EnglishToSpanishTranslator:
         self.tokenizer = MarianTokenizer.from_pretrained(model_name)
         self.model = MarianMTModel.from_pretrained(model_name)
         
+        # Setup device (GPU/CPU)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Translator running on device: {self.device}")
+        self.model.to(self.device)
+        
         # Worker threading
         self.queue = queue.Queue()
         self.running = False
         self.thread = None
 
     def translate(self, text: str) -> str:
-        batch = self.tokenizer([text], return_tensors="pt", padding=True)
-        generated_ids = self.model.generate(**batch)
+        batch = self.tokenizer([text], return_tensors="pt", padding=True).to(self.device)
+        generated_ids = self.model.generate(
+            **batch,
+            num_beams=5,
+            max_length=128,
+            early_stopping=True
+        )
         translated = self.tokenizer.decode(generated_ids[0], skip_special_tokens=True)
         return translated
 
