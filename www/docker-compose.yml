@@ -1,10 +1,18 @@
 services:
-  frontend:
-    image: nginx:alpine
-    container_name: stt-frontend
-    ports:
-      - "80:80"
+  stt:
+    restart: unless-stopped
+    image: nginx:latest
+    container_name: stt-front
     volumes:
       - ./:/usr/share/nginx/html
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
-    restart: unless-stopped
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    environment:
+      - VIRTUAL_HOST=ddsmarketing.joses.mx
+      - LETSENCRYPT_HOST=ddsmarketing.joses.mx
+      - LETSENCRYPT_EMAIL=rsolerh@hotmail.com
+    networks:
+      - manage_mynetsoler
+
+networks:
+  manage_mynetsoler:
+    external: true

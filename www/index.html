@@ -15,10 +15,34 @@
         <label>Output (Translation): <select id="outputLang"></select></label>
     </div>
 
+    <div style="margin-bottom: 20px; border: 1px solid #ddd; padding: 15px; border-radius: 8px;">
+        <label style="display: inline-flex; align-items: center; gap: 8px;">
+            <span>Agent</span>
+            <span class="switch">
+                <input type="checkbox" id="agentEnabled" checked>
+                <span class="slider"></span>
+            </span>
+        </label>
+        <span style="margin: 0 10px;">•</span>
+        <label style="display: inline-flex; align-items: center; gap: 8px;">
+            <span>Voice</span>
+            <span class="switch">
+                <input type="checkbox" id="voiceEnabled" checked disabled>
+                <span class="slider"></span>
+            </span>
+        </label>
+        <span style="margin: 0 10px;">•</span>
+        <label>LLM Model: <select id="agentModel" disabled></select></label>
+        <span style="margin: 0 10px;">•</span>
+        <label>Voz (TTS): <select id="voiceSelect" disabled></select></label>
+        
+        <button type="button" id="ttsIndicator" class="tts-indicator tts-muted" title="TTS: click para silenciar/activar">SPK</button>
+    </div>
+
     <div style="margin-bottom: 20px;">
         <button id="startBtn" onclick="startStream()">Start Streaming</button>
         <button id="stopBtn" onclick="stopStream()" disabled>Stop Streaming</button>
-        <span id="status" style="background-color: #eee;">Ready</span>
+        <span id="status" style="background-color: #eee;"></span>
     </div>
 
     <div id="log-container">

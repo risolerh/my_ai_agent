@@ -1,9 +1,14 @@
 import asyncio
 import os
+import threading
+import queue
 from typing import Optional, Callable, Dict
 from modules.audio_listener import SpeechProcessor
 from modules.translate import EnglishToSpanishTranslator
 from modules.model_selector import ensure_model, AVAILABLE_MODELS, MODELS_DIR
+from service.ollama_client import OllamaClient
+
+AGENT_HISTORY_LIMIT = 5
 
 
 class AudioService:
@@ -18,7 +23,10 @@ class AudioService:
         output_lang: str,
         translator_cache: Dict[str, EnglishToSpanishTranslator],
         default_model_id: str = "2",
-        sample_rate: int = 16000
+        sample_rate: int = 16000,
+        ollama_client: Optional[OllamaClient] = None,
+        agent_enabled: bool = False,
+        agent_model: Optional[str] = None
     ):
         """
         Initialize the audio service.
@@ -35,6 +43,9 @@ class AudioService:
         self.translator_cache = translator_cache
         self.default_model_id = default_model_id
         self.sample_rate = sample_rate
+        self.ollama_client = ollama_client
+        self.agent_enabled = agent_enabled
+        self.agent_model = agent_model
         
         # State
         self.processor: Optional[SpeechProcessor] = None
@@ -45,6 +56,11 @@ class AudioService:
         # Callbacks
         self._on_partial: Optional[Callable] = None
         self._on_final: Optional[Callable] = None
+        self._on_agent: Optional[Callable] = None
+        self._agent_queue: Optional[queue.Queue] = None
+        self._agent_thread: Optional[threading.Thread] = None
+        self._agent_running = False
+        self._agent_history = []
     
     async def setup(self):
         """
@@ -65,8 +81,12 @@ class AudioService:
         # Ensure model exists (download if needed)
         await asyncio.to_thread(ensure_model, model_path)
         
-        # Initialize speech processor
-        self.processor = SpeechProcessor(model_path, self.sample_rate)
+        # Initialize speech processor (Vosk model load can be slow)
+        self.processor = await asyncio.to_thread(
+            SpeechProcessor,
+            model_path,
+            self.sample_rate
+        )
         
         # Initialize translator if languages differ
         if self.input_lang_code != self.output_lang:
@@ -83,6 +103,9 @@ class AudioService:
             self.translator = self.translator_cache[translator_key]
         else:
             print(f"Same language detected ({self.input_lang_code}), skipping translation")
+
+        if self.agent_enabled and self.ollama_client and self.agent_model:
+            self._start_agent_worker()
     
     def set_on_partial(self, callback: Callable):
         """
@@ -97,6 +120,124 @@ class AudioService:
         Callback signature: callback(message: dict)
         """
         self._on_final = callback
+
+    def set_on_agent(self, callback: Callable):
+        """
+        Set callback for agent responses.
+        Callback signature: callback(message: dict)
+        """
+        self._on_agent = callback
+
+    def _start_agent_worker(self):
+        if self._agent_running:
+            return
+        self._agent_queue = queue.Queue(maxsize=1)
+        self._agent_running = True
+        self._agent_thread = threading.Thread(
+            target=self._agent_worker,
+            daemon=True
+        )
+        self._agent_thread.start()
+
+    def _agent_worker(self):
+        if not self._agent_queue:
+            return
+        while self._agent_running:
+            try:
+                prompt_text = self._agent_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if prompt_text is None:
+                continue
+            self._run_agent(prompt_text)
+
+    def _enqueue_agent_prompt(self, prompt_text: str):
+        if not self._agent_queue:
+            return
+        try:
+            self._agent_queue.put_nowait(prompt_text)
+        except queue.Full:
+            try:
+                _ = self._agent_queue.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                self._agent_queue.put_nowait(prompt_text)
+            except queue.Full:
+                return
+
+    def shutdown(self):
+        if not self._agent_running:
+            return
+        self._agent_running = False
+        if self._agent_queue:
+            try:
+                self._agent_queue.put_nowait(None)
+            except queue.Full:
+                pass
+        if self._agent_thread:
+            self._agent_thread.join(timeout=1.0)
+
+    def _run_agent(self, prompt_text: str):
+        if not self.ollama_client or not self.agent_enabled or not prompt_text:
+            return
+        if not self.agent_model:
+            return
+
+        if not self.ollama_client.is_available():
+            if self._on_agent:
+                self._on_agent({
+                    "type": "agent",
+                    "status": "error",
+                    "model": self.agent_model,
+                    "error": "Ollama server not available"
+                })
+            return
+
+        full_prompt = self._format_agent_prompt(prompt_text)
+        response = self.ollama_client.generate(self.agent_model, full_prompt, False)
+        if not response:
+            if self._on_agent:
+                self._on_agent({
+                    "type": "agent",
+                    "status": "error",
+                    "model": self.agent_model,
+                    "error": "No response from model"
+                })
+            return
+
+        if self._on_agent:
+            self._on_agent({
+                "type": "agent",
+                "status": "ok",
+                "model": self.agent_model,
+                "prompt": prompt_text,
+                "response": response
+            })
+        self._agent_history.append({
+            "transcript": prompt_text,
+            "response": response
+        })
+        if len(self._agent_history) > AGENT_HISTORY_LIMIT:
+            self._agent_history = self._agent_history[-AGENT_HISTORY_LIMIT:]
+
+    def _format_agent_prompt(self, current_text: str) -> str:
+        system_prompt = [
+            "System:",
+            "Responde siempre con tono amable.",
+            "Respuestas cortas.",
+            "Solo texto plano (sin markdown).",
+            f"Idioma de entrada (microfono): {self.input_lang_code or 'desconocido'}"
+        ]
+        if not self._agent_history:
+            return "\n".join(system_prompt + ["Nueva transcripcion:", current_text])
+        lines = system_prompt + ["Contexto (ultimas transcripciones y respuestas):"]
+        for item in self._agent_history[-AGENT_HISTORY_LIMIT:]:
+            lines.append(f"Transcripcion: {item['transcript']}")
+            lines.append(f"Respuesta: {item['response']}")
+        lines.append("Nueva transcripcion:")
+        lines.append(current_text)
+        return "\n".join(lines)
     
     def _handle_final(self, text: str, confidence: float):
         """Internal handler for final transcriptions."""
@@ -118,6 +259,10 @@ class AudioService:
             
             if self._on_final:
                 self._on_final(message)
+
+            if self.agent_enabled and self.ollama_client and self._on_agent:
+                prompt_text = text or translated_text
+                self._enqueue_agent_prompt(prompt_text)
                 
         except Exception as e:
             print(f"Translation error: {e}")

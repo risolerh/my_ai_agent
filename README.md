@@ -6,6 +6,7 @@ An intelligent agent capable of transcribing speech in real-time and translating
 - **Real-time Transcription (STT)**: Uses [Vosk](https://alphacephei.com/vosk/) for offline, low-latency speech recognition.
 - **Instant Translation**: Uses [MarianMT](https://huggingface.co/docs/transformers/model_doc/marian) (Helsinki-NLP) for high-quality translation.
 - **GPU Acceleration**: Automatically utilizes NVIDIA GPU (CUDA) for translation if available.
+- **Ollama Agent (Optional)**: Envía transcripciones a Ollama para generar respuestas en el front.
 - **Dual Modes**: 
     1. **Desktop App**: Graphical interface (Tkinter) for personal use.
     2. **API Server**: WebSocket server for providing STT/Translation services to other apps.
@@ -61,6 +62,7 @@ Then visit **http://localhost:8000/** to verify operation with the built-in test
 
 ### 📂 service/ (Servicios)
 - `audio_service.py`: Servicio de procesamiento de audio para el servidor WebSocket.
+- `ollama_client.py`: Cliente HTTP para Ollama (agent responses).
 
 ### 📂 view/ (Capa de Presentación)
 - `page.py`: Interfaz Gráfica de Usuario (GUI) con `tkinter`.

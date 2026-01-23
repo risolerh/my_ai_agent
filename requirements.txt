@@ -8,3 +8,4 @@ sounddevice
 numpy
 requests
 packaging
+websockets
