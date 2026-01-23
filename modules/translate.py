@@ -1,15 +1,31 @@
 import threading
+import os
+from pathlib import Path
+
+# Configurar caché local si existe la carpeta models_translate en la raíz del proyecto
+# Esto asegura que se usen los modelos locales tanto en Docker como en local
+project_root = Path(__file__).parent.parent
+local_models_path = project_root / "models_translate"
+
+if local_models_path.exists():
+    print(f"Using local transformers cache: {local_models_path.resolve()}")
+    os.environ["HF_HOME"] = str(local_models_path.resolve())
+
 from transformers import MarianMTModel, MarianTokenizer
 import torch
 
 import queue
 import time
 
-class EnglishToSpanishTranslator:
-    def __init__(self):
-        model_name = 'Helsinki-NLP/opus-mt-en-es'
-        self.tokenizer = MarianTokenizer.from_pretrained(model_name)
-        self.model = MarianMTModel.from_pretrained(model_name)
+class Translator:
+    def __init__(self, source_lang: str = "en", target_lang: str = "es"):
+        # Map common language codes to Helsinki-NLP models
+        # Format: Helsinki-NLP/opus-mt-{src}-{tgt}
+        self.model_name = f'Helsinki-NLP/opus-mt-{source_lang}-{target_lang}'
+        
+        print(f"Loading translation model: {self.model_name}")
+        self.tokenizer = MarianTokenizer.from_pretrained(self.model_name)
+        self.model = MarianMTModel.from_pretrained(self.model_name)
         
         # Setup device (GPU/CPU)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -86,34 +102,11 @@ class EnglishToSpanishTranslator:
             except Exception as e:
                 print(f"Error en worker de traducción: {e}")
 
-
-
-
-
-
+# Class alias for backward compatibility
+class EnglishToSpanishTranslator(Translator):
+    def __init__(self, source_lang: str = "en", target_lang: str = "es"):
+        super().__init__(source_lang=source_lang, target_lang=target_lang)
 
 if __name__ == "__main__":
-    translator = EnglishToSpanishTranslator()
-    print("... Iniciando test de 10 peticiones al debounced...")
-
-    def print_result(result):
-        print(f"-----> Traduccion: {result}")
-
-    for i in range(1,10):
-        # print(f"#{i} peticion al debounced")
-        english_text = f"This is test number {i}"
-        translator.translate_debounced(english_text, callback=print_result)
-    
-    print("! se enviaron 10 peticicness....")
-    threading.Event().wait(2)
-
-    for i in range(11,20):
-        # print(f"#{i} peticion al debounced")
-        english_text = f"This is test number {i}"
-        translator.translate_debounced(english_text, callback=print_result)
-
-    print("! se enviaron otras 10 peticicioes....")
+    translator = Translator("en", "es")
     print(f" <--------- {translator.translate('Hello, how are you?')} ")
-
-    # Espera suficiente para que el último debounce termine
-    threading.Event().wait(5)

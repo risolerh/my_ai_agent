@@ -47,7 +47,7 @@ This method ensures all dependencies are isolated and sets up GPU support automa
 If you have the environment set up locally (from Mode 1), you can run the server directly:
 
 ```bash
-python server.py
+pkill -f "python server.py" && python server.py
 ```
 
 Then visit **http://localhost:8000/** to verify operation with the built-in test client.

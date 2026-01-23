@@ -11,27 +11,32 @@ AVAILABLE_MODELS = {
     "1": {
         "name": "vosk-model-en-us-0.22-lgraph",
         "url": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip",
-        "lang": "English (ligero)"
+        "lang": "English (ligero)",
+        "code": "en"
     },
     "2": {
         "name": "vosk-model-en-us-0.22",
         "url": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22.zip",
-        "lang": "English (completo)"
+        "lang": "English (completo)",
+        "code": "en"
     },
     "3": {
         "name": "vosk-model-en-us-0.42-gigaspeech",
         "url": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.42-gigaspeech.zip",
-        "lang": "English (completo)"
+        "lang": "English (extendido)",
+        "code": "en"
     },
     "4": {
         "name": "vosk-model-small-es-0.42",
         "url": "https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip",
-        "lang": "Español (ligero)"
+        "lang": "Español (ligero)",
+        "code": "es"
     },
     "5": {
         "name": "vosk-model-es-0.42",
         "url": "https://alphacephei.com/vosk/models/vosk-model-es-0.42.zip",
-        "lang": "Español (completo)"
+        "lang": "Español (completo)",
+        "code": "es"
     },
 }
 
@@ -40,6 +45,20 @@ def is_model_downloaded(model_name):
     """Verifica si el modelo está descargado."""
     model_path = os.path.join(MODELS_DIR, model_name)
     return os.path.isdir(model_path)
+
+
+def get_models_info():
+    """Retorna una lista con la informacion de los modelos y si estan descargados."""
+    info = []
+    for key, model in AVAILABLE_MODELS.items():
+        info.append({
+            "id": key,
+            "name": model["name"],
+            "lang": model["lang"],
+            "code": model.get("code", "en"),
+            "downloaded": is_model_downloaded(model["name"])
+        })
+    return info
 
 
 def download_with_progress(url, dest_path):

@@ -3,11 +3,13 @@ FROM nvidia/cuda:12.2.0-base-ubuntu22.04
 # Avoid interactive prompts during build
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Incorporar uv para instalaciones más rápidas
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
 # Install Python and system dependencies
 # libportaudio2 is required for sounddevice import
 RUN apt-get update && apt-get install -y \
     python3 \
-    python3-pip \
     libportaudio2 \
     git \
     wget \
@@ -16,11 +18,10 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Upgrade pip
-RUN python3 -m pip install --upgrade pip
-
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Usar uv para instalar dependencias (mucho más rápido que pip)
+RUN uv pip install --system --no-cache -r requirements.txt
 
 # Copy application code
 COPY . .

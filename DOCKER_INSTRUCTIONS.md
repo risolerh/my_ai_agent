@@ -18,7 +18,7 @@ This implementation provides a GPU-accelerated Microservice for Speech-to-Text a
 
 ### 1. Build and Run
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 *First run will download the Vosk model if not present.*
 
@@ -32,7 +32,13 @@ Open http://localhost:8000/ in your browser.
 
 ## API Documentation
 
-**WebSocket Endpoint**: `ws://localhost:8000/ws/stream`
+**WebSocket Endpoint**: `ws://localhost:8000/ws/stream?input_lang={code}&output_lang={code}`
+- `input_lang`: Language code for STT (e.g., 'en', 'es'). Default: 'en'.
+- `output_lang`: Language code for Translation (e.g., 'es', 'fr'). Default: 'es'.
+
+**Helper Endpoints**:
+- `GET /api/models`: Returns list of available input STT models/languages.
+- `GET /api/languages`: Returns list of supported output translation languages.
 
 **Input Protocol**:
 - Binary messages: Raw PCM Audio
@@ -55,7 +61,9 @@ Open http://localhost:8000/ in your browser.
   "type": "final",
   "original": "hello world",
   "translation": "hola mundo",
-  "confidence": 0.95
+  "confidence": 0.95,
+  "input_lang": "en",
+  "output_lang": "es"
 }
 ```
 
