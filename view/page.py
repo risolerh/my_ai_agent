@@ -4,14 +4,7 @@ import sounddevice as sd
 import os
 
 WIDTH_SIZE = 600
-MODELS_DIR = "./models"
-
-AVAILABLE_MODELS = {
-    "vosk-model-en-us-0.22-lgraph": "English (ligero)",
-    "vosk-model-en-us-0.22": "English (completo)",
-    "vosk-model-small-es-0.42": "Español (ligero)",
-    "vosk-model-es-0.42": "Español (completo)"
-}
+from modules.model_selector import AVAILABLE_MODELS, MODELS_DIR
 
 
 class Page:
@@ -110,7 +103,9 @@ class Page:
     def _update_model_list(self):
         """Actualiza lista de modelos disponibles."""
         models = []
-        for model_name, display_name in AVAILABLE_MODELS.items():
+        for info in AVAILABLE_MODELS.values():
+            model_name = info["name"]
+            display_name = info["lang"]
             model_path = os.path.join(MODELS_DIR, model_name)
             if os.path.isdir(model_path):
                 models.append(f"✓ {display_name} ({model_name})")

@@ -3,8 +3,8 @@ import json
 import os
 
 class OllamaClient:
-    def __init__(self, base_url="http://localhost:11434"):
-        self.base_url = base_url
+    def __init__(self):
+        self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
     def is_available(self):
         """Check if Ollama server is reachable."""

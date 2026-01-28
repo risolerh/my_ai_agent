@@ -3,6 +3,15 @@ from modules.audio_listener import AudioListener
 from view.page import Page
 from modules.logger import TranscriptionLogger
 from modules.model_selector import ensure_model
+import os
+from pathlib import Path
+
+# Configurar rutas (igual que en server/translate modules)
+project_root = Path(__file__).parent
+models_translate_path = project_root / "models_translate"
+if models_translate_path.exists():
+    os.environ["HF_HOME"] = str(models_translate_path.resolve())
+    print(f"Main: HF_HOME set to {os.environ['HF_HOME']}")
 
 
 

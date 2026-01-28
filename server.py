@@ -2,17 +2,13 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from modules.audio_listener import SpeechProcessor
-from modules.translate import EnglishToSpanishTranslator
 from service.audio_service import AudioService
 from modules.model_selector import ensure_model, get_models_info, AVAILABLE_MODELS, MODELS_DIR
 from service.ollama_client import OllamaClient
 from service.tts_stream_service import TTSStreamService
 import requests
-import json
 import asyncio
 import os
-import torch
 from typing import Optional
 
 app = FastAPI()
@@ -83,9 +79,9 @@ translator_cache = {}
 # Ollama config
 OLLAMA_MODELS = [
     "qwen2.5-coder:14b",
-    "sam860/LFM2:8b",
-    "gpt-oss:20b-cloud",
     "ministral-3:14b",
+    "gpt-oss:20b-cloud",
+    "sam860/LFM2:8b",
 ]
 DEFAULT_OLLAMA_MODEL = OLLAMA_MODELS[0]
 ollama_client = OllamaClient()
@@ -213,4 +209,4 @@ async def websocket_endpoint(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8002)

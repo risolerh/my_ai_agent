@@ -224,18 +224,18 @@ class AudioService:
     def _format_agent_prompt(self, current_text: str) -> str:
         system_prompt = [
             "System:",
-            "Responde siempre con tono amable.",
-            "Respuestas cortas.",
-            "Solo texto plano (sin markdown).",
-            f"Idioma de entrada (microfono): {self.input_lang_code or 'desconocido'}"
+            "Always respond in a friendly tone.",
+            "Keep responses short.",
+            "Use only plain text (no markdown).",
+            "Respond in the same language as the user input.",
         ]
         if not self._agent_history:
-            return "\n".join(system_prompt + ["Nueva transcripcion:", current_text])
-        lines = system_prompt + ["Contexto (ultimas transcripciones y respuestas):"]
+            return "\n".join(system_prompt + ["New transcription:", current_text])
+        lines = system_prompt + ["Context (latest transcriptions and responses):"]
         for item in self._agent_history[-AGENT_HISTORY_LIMIT:]:
-            lines.append(f"Transcripcion: {item['transcript']}")
-            lines.append(f"Respuesta: {item['response']}")
-        lines.append("Nueva transcripcion:")
+            lines.append(f"Transcription: {item['transcript']}")
+            lines.append(f"Response: {item['response']}")
+        lines.append("New transcription:")
         lines.append(current_text)
         return "\n".join(lines)
     

@@ -23,7 +23,8 @@ function getHttpUrl(path) {
 }
 
 function getWsUrl(path, params) {
-    const base = SERVICES.wsBase || `ws://${window.location.host}`;
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const base = SERVICES.wsBase || `${wsProtocol}//${window.location.host}`;
     const query = params ? `?${params.toString()}` : '';
     return `${base}${path}${query}`;
 }
@@ -506,7 +507,7 @@ function handleMessage(data) {
     }
     else if (data.type === 'tts_audio') {
         if (data.data) {
-            playTtsChunk(data.data, data.sample_rate).catch(() => {});
+            playTtsChunk(data.data, data.sample_rate).catch(() => { });
         }
     }
     else if (data.type === 'tts_error') {

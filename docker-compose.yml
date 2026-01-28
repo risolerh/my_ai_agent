@@ -5,8 +5,14 @@ services:
       - HF_HOME=/app/models_translate
       - VOSK_MODEL_PATH=./models/vosk-model-en-us-0.22
       - SAMPLE_RATE=16000
+      - OLLAMA_BASE_URL=http://myhost:11434
+      - TTS_STREAM_URL=ws://myhost:8001/ws/tts-stream
+      - TTS_HTTP_URL=http://myhost:8001
+    extra_hosts:
+      - "myhost:192.168.1.2"
     ports:
-      - "8000:8000"
+      - "192.168.1.2:8000:8000"
+    # network_mode: "host"
     volumes:
       - ./:/app
       - ./models:/app/models
