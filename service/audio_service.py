@@ -88,6 +88,10 @@ class AudioService:
             self.sample_rate
         )
         
+        # Attach callbacks immediately
+        self.processor.set_on_final(self._handle_final)
+        self.processor.set_on_partial(self._handle_partial)
+        
         # Initialize translator if languages differ
         if self.input_lang_code != self.output_lang:
             translator_key = f"{self.input_lang_code}-{self.output_lang}"
@@ -286,12 +290,6 @@ class AudioService:
         """
         if not self.processor:
             raise RuntimeError("AudioService not initialized. Call setup() first.")
-        
-        # Setup callbacks if not already done
-        if not self.processor._on_final:
-            self.processor.set_on_final(self._handle_final)
-        if not self.processor._on_partial:
-            self.processor.set_on_partial(self._handle_partial)
         
         # Process audio in background thread (Vosk is blocking)
         await asyncio.to_thread(self.processor.process, data)

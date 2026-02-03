@@ -23,6 +23,7 @@ For detailed instructions on how to install system dependencies, create a virtua
 
 ### Running the App
 ```bash
+source ./venv/bin/activate
 python main.py
 ```
 - A window will open.

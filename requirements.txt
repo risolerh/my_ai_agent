@@ -9,3 +9,5 @@ numpy
 requests
 packaging
 websockets
+faster-whisper
+scipy
