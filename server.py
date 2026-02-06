@@ -44,7 +44,7 @@ async def read_index():
 
 @app.get("/favicon.ico")
 async def favicon():
-    return FileResponse('www/static/favicon.ico')
+    return FileResponse('www/static/resources/favicon.ico')
 
 @app.get("/api/models")
 async def get_models():
@@ -77,14 +77,18 @@ async def get_tts_voices():
 translator_cache = {}
 
 # Ollama config
-OLLAMA_MODELS = [
-    "qwen2.5-coder:14b",
-    "ministral-3:14b",
-    "gpt-oss:20b-cloud",
-    "sam860/LFM2:8b",
-]
-DEFAULT_OLLAMA_MODEL = OLLAMA_MODELS[0]
+OLLAMA_MODELS = []
+
+# Ollama config
 ollama_client = OllamaClient()
+try:
+    fetched_models = ollama_client.list_models()
+    if fetched_models:
+        OLLAMA_MODELS = fetched_models
+except Exception as e:
+    print(f"Failed to fetch models from Ollama: {e}")
+
+DEFAULT_OLLAMA_MODEL = OLLAMA_MODELS[0]
 
 
 # Global instances

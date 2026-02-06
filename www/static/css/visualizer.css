@@ -1,0 +1,32 @@
+.visualizer-container {
+    display: inline-block;
+    vertical-align: middle;
+    width: 15px;
+    height: 30px;
+    background: #e0e0e0;
+    border: 1px solid #ccc;
+    position: relative;
+    margin: 0 10px;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.visualizer-bar {
+    width: 100%;
+    height: 0%;
+    background: #4caf50;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    transition: height 0.05s ease;
+}
+
+#muteBtn {
+    min-width: 80px;
+}
+
+#muteBtn.muted {
+    background-color: #e07b7b;
+    color: white;
+    border-color: #b23b3b;
+}

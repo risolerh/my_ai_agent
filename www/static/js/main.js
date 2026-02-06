@@ -4,6 +4,8 @@ let processor;
 let stream;
 let globalStream;
 
+
+
 const SERVICES = {
     httpBase: '',
     wsBase: '',
@@ -30,23 +32,25 @@ function getWsUrl(path, params) {
 }
 
 const statusEl = document.getElementById('status');
+const agentEnabledEl = document.getElementById('agentEnabled');
+const agentModelEl = document.getElementById('agentModel');
+const voiceEnabledEl = document.getElementById('voiceEnabled');
+const voiceSelectEl = document.getElementById('voiceSelect');
+
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const logEl = document.getElementById('log');
 const inputLangEl = document.getElementById('inputLang');
 const outputLangEl = document.getElementById('outputLang');
-const agentEnabledEl = document.getElementById('agentEnabled');
-const agentModelEl = document.getElementById('agentModel');
-const voiceEnabledEl = document.getElementById('voiceEnabled');
-const voiceSelectEl = document.getElementById('voiceSelect');
-const ttsIndicatorEl = document.getElementById('ttsIndicator');
+
+
 
 let currentPartialEl = null;
 let ttsContext = null;
 let ttsNextTime = 0;
 let ttsActiveNodes = [];
 let ttsVoices = [];
-let ttsIndicatorTimer = null;
+
 let ttsSpeakingUntil = 0;
 let inputLangCodeById = {};
 let currentInputLangCode = '';
@@ -67,28 +71,7 @@ function setControlsDisabled(disabled) {
     }
 }
 
-function setTtsIndicator(state) {
-    ttsIndicatorEl.classList.remove('tts-idle', 'tts-speaking', 'tts-muted');
-    if (state === 'speaking') {
-        ttsIndicatorEl.classList.add('tts-speaking');
-    } else if (state === 'muted') {
-        ttsIndicatorEl.classList.add('tts-muted');
-    } else {
-        ttsIndicatorEl.classList.add('tts-idle');
-    }
-}
 
-function updateTtsIndicatorFromControls() {
-    if (!agentEnabledEl.checked) {
-        setTtsIndicator('idle');
-        return;
-    }
-    if (!voiceEnabledEl.checked) {
-        setTtsIndicator('muted');
-        return;
-    }
-    setTtsIndicator('idle');
-}
 
 function normalizeVoices(list) {
     return (list || []).map(item => {
@@ -132,11 +115,7 @@ function resetTtsPlayback() {
     ttsActiveNodes = [];
     ttsNextTime = 0;
     ttsSpeakingUntil = 0;
-    if (ttsIndicatorTimer) {
-        clearTimeout(ttsIndicatorTimer);
-        ttsIndicatorTimer = null;
-    }
-    updateTtsIndicatorFromControls();
+
 }
 
 function ensureTtsContext(sampleRate) {
@@ -217,15 +196,7 @@ async function playTtsChunk(base64Data, sampleRate) {
         ttsActiveNodes = ttsActiveNodes.filter(n => n !== source);
     };
 
-    setTtsIndicator('speaking');
     ttsSpeakingUntil = Math.max(ttsSpeakingUntil, ttsNextTime);
-    if (ttsIndicatorTimer) {
-        clearTimeout(ttsIndicatorTimer);
-    }
-    const remainingMs = Math.max(0, (ttsSpeakingUntil - ttsContext.currentTime) * 1000);
-    ttsIndicatorTimer = setTimeout(() => {
-        updateTtsIndicatorFromControls();
-    }, remainingMs + 50);
 }
 
 // Load configuration on startup
@@ -291,7 +262,6 @@ window.addEventListener('DOMContentLoaded', async () => {
                 }
                 voiceEnabledEl.disabled = !agentEnabledEl.checked;
                 voiceSelectEl.disabled = !agentEnabledEl.checked || !voiceEnabledEl.checked;
-                updateTtsIndicatorFromControls();
             }
         });
         voiceEnabledEl.addEventListener('change', () => {
@@ -301,7 +271,6 @@ window.addEventListener('DOMContentLoaded', async () => {
                 if (!voiceEnabledEl.checked) {
                     resetTtsPlayback();
                 }
-                updateTtsIndicatorFromControls();
             }
         });
         inputLangEl.addEventListener('change', () => {
@@ -312,15 +281,6 @@ window.addEventListener('DOMContentLoaded', async () => {
             updateVoiceOptions();
         });
         updateVoiceOptions();
-        updateTtsIndicatorFromControls();
-
-        ttsIndicatorEl.addEventListener('click', () => {
-            if (voiceEnabledEl.disabled) {
-                return;
-            }
-            voiceEnabledEl.checked = !voiceEnabledEl.checked;
-            voiceEnabledEl.dispatchEvent(new Event('change'));
-        });
 
     } catch (e) {
         console.error("Error loading config", e);
@@ -337,18 +297,18 @@ function setButtonsState(state) {
     if (state === 'connecting') {
         startBtn.disabled = true;
         stopBtn.disabled = false;
+        muteBtn.disabled = false;
         setControlsDisabled(true);
-        updateTtsIndicatorFromControls();
     } else if (state === 'streaming') {
         startBtn.disabled = true;
         stopBtn.disabled = false;
+        muteBtn.disabled = false;
         setControlsDisabled(true);
-        updateTtsIndicatorFromControls();
     } else {
         startBtn.disabled = false;
         stopBtn.disabled = true;
+
         setControlsDisabled(false);
-        updateTtsIndicatorFromControls();
     }
 }
 
@@ -420,7 +380,7 @@ async function startAudio() {
         audioContext = new AudioContext({ sampleRate: 16000 });
 
         // Add the AudioWorklet module
-        await audioContext.audioWorklet.addModule('/static/processor.js');
+        await audioContext.audioWorklet.addModule('/static/js/processor.js');
 
         const source = audioContext.createMediaStreamSource(stream);
         const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
@@ -435,6 +395,11 @@ async function startAudio() {
 
         source.connect(workletNode);
         workletNode.connect(audioContext.destination);
+
+        // Create Analyser for visualizer - delegated to visualizer.js
+        if (typeof initVisualizer === 'function') {
+            initVisualizer(stream, audioContext, source);
+        }
 
         // Keep reference to disconnect later if needed (though context close handles it)
         processor = workletNode;
@@ -460,6 +425,9 @@ function stopStream() {
         ws.close();
     }
     resetTtsPlayback();
+    if (typeof stopVisualizer === 'function') {
+        stopVisualizer();
+    }
     setButtonsState('stopped');
     setStatus('', '#eee');
 }
@@ -568,4 +536,18 @@ function toggleLog(action) {
     setTimeout(() => {
         logEl.scrollTop = logEl.scrollHeight;
     }, 350);
+}
+
+function toggleMute() {
+    if (globalStream) {
+        const track = globalStream.getAudioTracks()[0];
+        track.enabled = !track.enabled;
+        if (track.enabled) {
+            muteBtn.textContent = '🎤 On';
+            muteBtn.classList.remove('muted');
+        } else {
+            muteBtn.textContent = '🎤 Muted';
+            muteBtn.classList.add('muted');
+        }
+    }
 }

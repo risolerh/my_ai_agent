@@ -3,52 +3,90 @@
 
 <head>
     <meta charset="UTF-8">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/control-panel.css">
+    <link rel="stylesheet" href="/static/css/transcript.css">
+    <link rel="stylesheet" href="/static/css/visualizer.css">
 </head>
 
 <body>
-    <h1>🎙️ STT & Translation API Test (v0.2)</h1>
+    <h1>🎙️ AI Voice Translator Agent (v0.0.3)</h1>
 
-    <div style="margin-bottom: 20px; border: 1px solid #ddd; padding: 15px; border-radius: 8px;">
-        <label>Input (Microphone): <select id="inputLang"></select></label>
-        <span style="margin: 0 10px;">➜</span>
-        <label>Output (Translation): <select id="outputLang"></select></label>
-    </div>
+    <div class="main-controls">
+        <!-- Language Settings -->
+        <div class="control-card">
+            <h3>Translation Settings</h3>
+            <div class="control-row-lang">
+                <div class="input-group">
+                    <label>Source Language</label>
+                    <select id="inputLang"></select>
+                </div>
+                <div class="arrow-indicator">➜</div>
+                <div class="input-group">
+                    <label>Target Language</label>
+                    <select id="outputLang"></select>
+                </div>
+            </div>
+        </div>
 
-    <div style="margin-bottom: 20px; border: 1px solid #ddd; padding: 15px; border-radius: 8px;">
-        <label style="display: inline-flex; align-items: center; gap: 8px;">
-            <span>Agent</span>
-            <span class="switch">
-                <input type="checkbox" id="agentEnabled" checked>
-                <span class="slider"></span>
-            </span>
-        </label>
-        <span style="margin: 0 10px;">•</span>
-        <label style="display: inline-flex; align-items: center; gap: 8px;">
-            <span>Voice</span>
-            <span class="switch">
-                <input type="checkbox" id="voiceEnabled" checked disabled>
-                <span class="slider"></span>
-            </span>
-        </label>
-        <span style="margin: 0 10px;">•</span>
-        <label>LLM Model: <select id="agentModel" disabled></select></label>
-        <span style="margin: 0 10px;">•</span>
-        <label>Voz (TTS): <select id="voiceSelect" disabled></select></label>
+        <!-- AI Configuration -->
+        <div class="control-card">
+            <h3>AI Agent Configuration</h3>
+            <div class="control-grid-ai">
+                <div class="control-item">
+                    <label class="toggle-container">
+                        <span>Enable AI Agent</span>
+                        <span class="switch">
+                            <input type="checkbox" id="agentEnabled" checked>
+                            <span class="slider"></span>
+                        </span>
+                    </label>
+                </div>
 
-        <button type="button" id="ttsIndicator" class="tts-indicator tts-muted"
-            title="TTS: click para silenciar/activar">SPK</button>
-    </div>
+                <div class="control-item input-select">
+                    <label>AI Model</label>
+                    <select id="agentModel" disabled></select>
+                </div>
 
-    <div style="margin-bottom: 20px;">
-        <button id="startBtn" onclick="startStream()">Start Streaming</button>
-        <button id="stopBtn" onclick="stopStream()" disabled>Stop Streaming</button>
-        <span id="status" style="background-color: #eee;"></span>
+                <div class="control-item">
+                    <label class="toggle-container">
+                        <span>Enable Voice (TTS)</span>
+                        <span class="switch">
+                            <input type="checkbox" id="voiceEnabled" checked disabled>
+                            <span class="slider"></span>
+                        </span>
+                    </label>
+                </div>
+
+                <div class="control-item input-select">
+                    <label>Voice Persona</label>
+                    <select id="voiceSelect" disabled></select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Session Controls -->
+        <div class="control-card session-bar">
+            <div class="session-buttons">
+                <button id="startBtn" onclick="startStream()">Start Session</button>
+                <button id="stopBtn" onclick="stopStream()" disabled>End Session</button>
+            </div>
+
+            <div class="session-info">
+                <div class="mute-container">
+                    <button id="muteBtn" onclick="toggleMute()" disabled>🎤 On</button>
+                    <div class="visualizer-container">
+                        <div id="visualizerBar" class="visualizer-bar"></div>
+                    </div>
+                </div>
+                <span id="status" style="background-color: #eee;">Ready</span>
+            </div>
+        </div>
     </div>
 
     <div id="log-container">
         <div id="log-header">
-            <h3>Transcription Log</h3>
+            <h3>Session Transcript</h3>
             <div class="window-controls">
                 <button class="control-btn minimize" onclick="toggleLog('minimize')" title="Minimize">_</button>
                 <button class="control-btn maximize" onclick="toggleLog('maximize')" title="Maximize">□</button>
@@ -57,7 +95,8 @@
         <div id="log"></div>
     </div>
 
-    <script src="/static/main.js"></script>
+    <script src="/static/js/visualizer.js"></script>
+    <script src="/static/js/main.js"></script>
 </body>
 
 </html>

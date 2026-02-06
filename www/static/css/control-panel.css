@@ -1,0 +1,233 @@
+/* Layout Cards */
+.control-card {
+    background: white;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.control-card h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.1em;
+    color: #666;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+/* Language Selection Row */
+.control-row-lang {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.input-group label {
+    font-size: 0.9em;
+    font-weight: bold;
+    color: #555;
+}
+
+.input-group select {
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    font-size: 15px;
+    min-width: 150px;
+}
+
+.arrow-indicator {
+    font-size: 1.5em;
+    color: #888;
+    margin-top: 15px;
+}
+
+/* AI Configuration Grid */
+.control-grid-ai {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: center;
+}
+
+@media (max-width: 600px) {
+    .control-grid-ai {
+        grid-template-columns: 1fr;
+    }
+}
+
+.control-item {
+    display: flex;
+    align-items: center;
+}
+
+.control-item.input-select {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+}
+
+.control-item.input-select label {
+    font-size: 0.85em;
+    flex-shrink: 0;
+    color: #666;
+}
+
+.control-item select {
+    width: 100%;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+}
+
+/* Toggle Switch Styling Container */
+.toggle-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: #f9f9f9;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #eee;
+    cursor: pointer;
+}
+
+.toggle-container span:first-child {
+    font-weight: 500;
+}
+
+/* Session Bar */
+.session-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.session-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.session-info {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+button {
+    padding: 10px 20px;
+    font-size: 15px;
+    cursor: pointer;
+    border: none;
+    border-radius: 4px;
+    background-color: #2196F3;
+    color: white;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #1976D2;
+}
+
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+#startBtn {
+    background-color: #4caf50;
+}
+
+#startBtn:hover {
+    background-color: #388e3c;
+}
+
+#startBtn:disabled {
+    background-color: #ccc;
+}
+
+#stopBtn {
+    background-color: #f44336;
+}
+
+#stopBtn:hover {
+    background-color: #d32f2f;
+}
+
+#stopBtn:disabled {
+    background-color: #ccc;
+}
+
+#status {
+    font-weight: bold;
+    padding: 8px 15px;
+    border-radius: 20px;
+    font-size: 0.9em;
+    min-width: 100px;
+    text-align: center;
+}
+
+.mute-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Toggle Switch Styles */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.2s;
+    border-radius: 24px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.2s;
+    border-radius: 50%;
+}
+
+.switch input:checked+.slider {
+    background-color: #4caf50;
+}
+
+.switch input:checked+.slider:before {
+    transform: translateX(20px);
+}
