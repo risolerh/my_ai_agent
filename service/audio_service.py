@@ -3,7 +3,7 @@ import os
 import threading
 import queue
 from typing import Optional, Callable, Dict
-from modules.audio_listener import SpeechProcessor
+from modules.stt.vosk_strategy import VoskStrategy
 from modules.translate import EnglishToSpanishTranslator
 from modules.model_selector import ensure_model, AVAILABLE_MODELS, MODELS_DIR
 from service.ollama_client import OllamaClient
@@ -48,7 +48,7 @@ class AudioService:
         self.agent_model = agent_model
         
         # State
-        self.processor: Optional[SpeechProcessor] = None
+        self.processor: Optional[VoskStrategy] = None
         self.translator: Optional[EnglishToSpanishTranslator] = None
         self.input_lang_code: Optional[str] = None
         self.model_info: Optional[dict] = None
@@ -82,8 +82,10 @@ class AudioService:
         await asyncio.to_thread(ensure_model, model_path)
         
         # Initialize speech processor (Vosk model load can be slow)
-        self.processor = await asyncio.to_thread(
-            SpeechProcessor,
+        # Initialize speech processor (Vosk Strategy)
+        self.processor = await asyncio.to_thread(VoskStrategy)
+        await asyncio.to_thread(
+            self.processor.initialize,
             model_path,
             self.sample_rate
         )

@@ -17,12 +17,26 @@ class OllamaClient:
     def list_models(self):
         """List available models in Ollama."""
         try:
-            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                # 'models' is the key in recent versions of Ollama API
-                return [model['name'] for model in data.get('models', [])]
-            return []
+            # response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            # if response.status_code == 200:
+            #     data = response.json()
+            #     # 'models' is the key in recent versions of Ollama API
+            #     return [model['name'] for model in data.get('models', [])]
+            return [
+                "sam860/lfm2.5:1.2b-F16",
+                "qwen3-coder:30b",
+                "qwen2.5-coder:14b",
+                "sam860/LFM2:8b",
+                "ministral-3:14b",
+                "qwen3:14b"
+                # "qwen3-embedding:4b",
+                # "qwen3-embedding:8b",
+                # "codestral:22b",
+                # "gpt-oss:20b-cloud",
+                # "gpt-oss:120b-cloud",
+                # "deepseek-coder-v2:16b",
+                # "mistral:latest",
+            ]
         except Exception as e:
             print(f"Error listing models: {e}")
             return []

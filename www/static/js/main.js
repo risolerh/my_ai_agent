@@ -1,10 +1,6 @@
-let ws;
-let audioContext;
-let processor;
-let stream;
-let globalStream;
-
-
+// Instances
+const audioManager = new AudioManager();
+const ttsManager = new TTSManager();
 
 const SERVICES = {
     httpBase: '',
@@ -15,9 +11,7 @@ const SERVICES = {
     streamPath: '/ws/stream'
 };
 
-const TTS_CONFIG = {
-    bufferSeconds: 0.15
-};
+const ws = { current: null }; // Wrapper to hold WS reference
 
 function getHttpUrl(path) {
     const base = SERVICES.httpBase || window.location.origin;
@@ -46,12 +40,8 @@ const outputLangEl = document.getElementById('outputLang');
 
 
 let currentPartialEl = null;
-let ttsContext = null;
-let ttsNextTime = 0;
-let ttsActiveNodes = [];
-let ttsVoices = [];
 
-let ttsSpeakingUntil = 0;
+let ttsVoices = [];
 let inputLangCodeById = {};
 let currentInputLangCode = '';
 
@@ -105,98 +95,12 @@ function updateVoiceOptions() {
 }
 
 function resetTtsPlayback() {
-    ttsActiveNodes.forEach(node => {
-        try {
-            node.stop();
-        } catch (e) {
-            // ignore
-        }
-    });
-    ttsActiveNodes = [];
-    ttsNextTime = 0;
-    ttsSpeakingUntil = 0;
-
-}
-
-function ensureTtsContext(sampleRate) {
-    if (!ttsContext) {
-        ttsContext = new AudioContext({ sampleRate: sampleRate || 16000 });
-        return;
-    }
-    if (sampleRate && ttsContext.sampleRate !== sampleRate) {
-        ttsContext.close();
-        ttsContext = new AudioContext({ sampleRate });
-        ttsNextTime = 0;
-        ttsActiveNodes = [];
-    }
-}
-
-function base64ToArrayBuffer(base64) {
-    const binary = atob(base64);
-    const buffer = new ArrayBuffer(binary.length);
-    const bytes = new Uint8Array(buffer);
-    for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-    }
-    return buffer;
-}
-
-function isWavBuffer(buffer) {
-    const bytes = new Uint8Array(buffer);
-    if (bytes.length < 12) return false;
-    const riff = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
-    const wave = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
-    return riff === 'RIFF' && wave === 'WAVE';
+    ttsManager.reset();
 }
 
 async function playTtsChunk(base64Data, sampleRate) {
     if (!voiceEnabledEl.checked) return;
-    ensureTtsContext(sampleRate || 16000);
-    if (ttsContext.state === 'suspended') {
-        try {
-            await ttsContext.resume();
-        } catch (e) {
-            // ignore
-        }
-    }
-
-    const rawBuffer = base64ToArrayBuffer(base64Data);
-    let audioBuffer = null;
-    if (isWavBuffer(rawBuffer)) {
-        try {
-            audioBuffer = await ttsContext.decodeAudioData(rawBuffer.slice(0));
-        } catch (e) {
-            console.error('TTS WAV decode error', e);
-            return;
-        }
-    } else {
-        const int16 = new Int16Array(rawBuffer);
-        const float32 = new Float32Array(int16.length);
-        for (let i = 0; i < int16.length; i++) {
-            float32[i] = int16[i] / 32768;
-        }
-        const rate = sampleRate || 16000;
-        audioBuffer = ttsContext.createBuffer(1, float32.length, rate);
-        audioBuffer.copyToChannel(float32, 0);
-    }
-
-    const source = ttsContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(ttsContext.destination);
-
-    const now = ttsContext.currentTime;
-    if (ttsNextTime < now + TTS_CONFIG.bufferSeconds) {
-        ttsNextTime = now + TTS_CONFIG.bufferSeconds;
-    }
-    source.start(ttsNextTime);
-    ttsNextTime += audioBuffer.duration;
-
-    ttsActiveNodes.push(source);
-    source.onended = () => {
-        ttsActiveNodes = ttsActiveNodes.filter(n => n !== source);
-    };
-
-    ttsSpeakingUntil = Math.max(ttsSpeakingUntil, ttsNextTime);
+    await ttsManager.playChunk(base64Data, sampleRate);
 }
 
 // Load configuration on startup
@@ -335,24 +239,25 @@ async function startStream() {
         const url = getWsUrl(SERVICES.streamPath, params);
 
         console.log("Connecting to", url);
-        ws = new WebSocket(url);
-        ws.binaryType = 'arraybuffer';
+        console.log("Connecting to", url);
+        ws.current = new WebSocket(url);
+        ws.current.binaryType = 'arraybuffer';
 
-        ws.onopen = () => {
+        ws.current.onopen = () => {
             setStatus('Conectando...', '#fff0aa');
             startAudio();
         };
 
-        ws.onclose = () => {
+        ws.current.onclose = () => {
             stopStream();
         };
 
-        ws.onerror = (e) => {
+        ws.current.onerror = (e) => {
             console.error("WS Error", e);
             setStatus('Error', '#ffaa00');
         };
 
-        ws.onmessage = (event) => {
+        ws.current.onmessage = (event) => {
             const data = JSON.parse(event.data);
             handleMessage(data);
         };
@@ -367,64 +272,34 @@ async function startStream() {
 
 async function startAudio() {
     try {
-        // Request 16kHz audio specifically
-        stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                channelCount: 1,
-                sampleRate: 16000
+        await audioManager.start(
+            (data) => {
+                if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+                    ws.current.send(data);
+                }
+            },
+            (stream, context, source) => {
+                // Initialize visualizer
+                if (typeof initVisualizer === 'function') {
+                    initVisualizer(stream, context, source);
+                }
             }
-        });
-        globalStream = stream;
-
-        // Create AudioContext at 16k
-        audioContext = new AudioContext({ sampleRate: 16000 });
-
-        // Add the AudioWorklet module
-        await audioContext.audioWorklet.addModule('/static/js/processor.js');
-
-        const source = audioContext.createMediaStreamSource(stream);
-        const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
-
-        // Handle data from the processor
-        workletNode.port.onmessage = (event) => {
-            // event.data is the Int16Array buffer
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(event.data);
-            }
-        };
-
-        source.connect(workletNode);
-        workletNode.connect(audioContext.destination);
-
-        // Create Analyser for visualizer - delegated to visualizer.js
-        if (typeof initVisualizer === 'function') {
-            initVisualizer(stream, audioContext, source);
-        }
-
-        // Keep reference to disconnect later if needed (though context close handles it)
-        processor = workletNode;
+        );
     } catch (e) {
-        console.error("Audio access error", e);
         alert("Could not access microphone: " + e.message);
-        ws.close();
+        if (ws.current) ws.current.close();
     }
 }
 
 function stopStream() {
-    if (globalStream) {
-        globalStream.getTracks().forEach(track => track.stop());
+    audioManager.stop();
+    ttsManager.close();
+
+    if (ws.current) {
+        ws.current.close();
+        ws.current = null;
     }
-    if (audioContext) {
-        audioContext.close();
-    }
-    if (ttsContext) {
-        ttsContext.close();
-        ttsContext = null;
-    }
-    if (ws) {
-        ws.close();
-    }
-    resetTtsPlayback();
+    resetTtsPlayback(); 
     if (typeof stopVisualizer === 'function') {
         stopVisualizer();
     }
@@ -539,15 +414,12 @@ function toggleLog(action) {
 }
 
 function toggleMute() {
-    if (globalStream) {
-        const track = globalStream.getAudioTracks()[0];
-        track.enabled = !track.enabled;
-        if (track.enabled) {
-            muteBtn.textContent = '🎤 On';
-            muteBtn.classList.remove('muted');
-        } else {
-            muteBtn.textContent = '🎤 Muted';
-            muteBtn.classList.add('muted');
-        }
+    const isEnabled = audioManager.toggleMute();
+    if (isEnabled) {
+        muteBtn.textContent = '🎤 On';
+        muteBtn.classList.remove('muted');
+    } else {
+        muteBtn.textContent = '🎤 Muted';
+        muteBtn.classList.add('muted');
     }
 }

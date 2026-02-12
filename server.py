@@ -195,8 +195,8 @@ async def websocket_endpoint(
         
         # Process incoming audio stream
         while True:
-            data = await websocket.receive_bytes()
-            await service.process_audio(data)
+            data = await websocket.receive_bytes() # <--- AQUÍ RECIBE EL AUDIO
+            await service.process_audio(data) # Envía el audio al servicio STT
             
     except WebSocketDisconnect:
         print("Client disconnected")
