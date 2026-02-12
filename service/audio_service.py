@@ -2,13 +2,18 @@ import asyncio
 import os
 import threading
 import queue
+from datetime import datetime
 from typing import Optional, Callable, Dict
 from modules.stt.vosk_strategy import VoskStrategy
 from modules.translate import EnglishToSpanishTranslator
 from modules.model_selector import ensure_model, AVAILABLE_MODELS, MODELS_DIR
 from service.ollama_client import OllamaClient
 
+def _ts():
+    return datetime.now().strftime('%H:%M:%S.%f')[:-3]
+
 AGENT_HISTORY_LIMIT = 5
+TURN_SILENCE_TIMEOUT = 2.5  # seconds of silence before flushing turn to LLM
 
 
 class AudioService:
@@ -57,10 +62,18 @@ class AudioService:
         self._on_partial: Optional[Callable] = None
         self._on_final: Optional[Callable] = None
         self._on_agent: Optional[Callable] = None
+        self._on_barge_in: Optional[Callable] = None
         self._agent_queue: Optional[queue.Queue] = None
         self._agent_thread: Optional[threading.Thread] = None
         self._agent_running = False
+        self._agent_cancelled = threading.Event()
         self._agent_history = []
+
+        # Turn accumulator
+        self._turn_buffer: list[str] = []
+        self._turn_timer: Optional[threading.Timer] = None
+        self._turn_lock = threading.Lock()
+        self._tts_speaking = False
     
     async def setup(self):
         """
@@ -69,14 +82,14 @@ class AudioService:
         """
         # Validate model ID
         if self.model_id not in AVAILABLE_MODELS:
-            print(f"Invalid model ID: {self.model_id}, defaulting to {self.default_model_id}")
+            print(f"[{_ts()}] Invalid model ID: {self.model_id}, defaulting to {self.default_model_id}")
             self.model_id = self.default_model_id
         
         self.model_info = AVAILABLE_MODELS[self.model_id]
         model_path = os.path.join(MODELS_DIR, self.model_info["name"])
         self.input_lang_code = self.model_info.get("code", "en")
         
-        print(f"Setting up AudioService - Model: {self.model_info['lang']}, Input: {self.input_lang_code}, Output: {self.output_lang}")
+        print(f"[{_ts()}] Setting up AudioService - Model: {self.model_info['lang']}, Input: {self.input_lang_code}, Output: {self.output_lang}")
         
         # Ensure model exists (download if needed)
         await asyncio.to_thread(ensure_model, model_path)
@@ -99,7 +112,7 @@ class AudioService:
             translator_key = f"{self.input_lang_code}-{self.output_lang}"
             
             if translator_key not in self.translator_cache:
-                print(f"Initializing translator for {translator_key}...")
+                print(f"[{_ts()}] Initializing translator for {translator_key}...")
                 self.translator_cache[translator_key] = await asyncio.to_thread(
                     EnglishToSpanishTranslator, 
                     source_lang=self.input_lang_code, 
@@ -108,7 +121,7 @@ class AudioService:
             
             self.translator = self.translator_cache[translator_key]
         else:
-            print(f"Same language detected ({self.input_lang_code}), skipping translation")
+            print(f"[{_ts()}] Same language detected ({self.input_lang_code}), skipping translation")
 
         if self.agent_enabled and self.ollama_client and self.agent_model:
             self._start_agent_worker()
@@ -134,6 +147,17 @@ class AudioService:
         """
         self._on_agent = callback
 
+    def set_on_barge_in(self, callback: Callable):
+        """
+        Set callback for barge-in events (user interrupts TTS).
+        Callback signature: callback()
+        """
+        self._on_barge_in = callback
+
+    def set_tts_speaking(self, speaking: bool):
+        """Track whether TTS is currently playing audio."""
+        self._tts_speaking = speaking
+
     def _start_agent_worker(self):
         if self._agent_running:
             return
@@ -157,9 +181,44 @@ class AudioService:
                 continue
             self._run_agent(prompt_text)
 
+    def barge_in(self):
+        """
+        Called when user starts speaking while TTS is active.
+        Cancels current LLM generation, clears pending work, stops turn timer.
+        """
+        if not self._tts_speaking:
+            return
+
+        print(f"[{_ts()}] [BARGE-IN] User interrupted, cancelling agent + TTS")
+        self._tts_speaking = False
+
+        # Cancel turn timer
+        with self._turn_lock:
+            if self._turn_timer:
+                self._turn_timer.cancel()
+                self._turn_timer = None
+            # Keep buffer contents - they are part of the conversation context
+
+        # Signal agent to abort current generation
+        self._agent_cancelled.set()
+
+        # Clear agent queue
+        if self._agent_queue:
+            try:
+                while not self._agent_queue.empty():
+                    self._agent_queue.get_nowait()
+            except queue.Empty:
+                pass
+
+        # Notify caller (server.py) to stop TTS
+        if self._on_barge_in:
+            self._on_barge_in()
+
     def _enqueue_agent_prompt(self, prompt_text: str):
         if not self._agent_queue:
             return
+        # Reset cancelled flag before new work
+        self._agent_cancelled.clear()
         try:
             self._agent_queue.put_nowait(prompt_text)
         except queue.Full:
@@ -173,9 +232,16 @@ class AudioService:
                 return
 
     def shutdown(self):
+        # Cancel turn timer
+        with self._turn_lock:
+            if self._turn_timer:
+                self._turn_timer.cancel()
+                self._turn_timer = None
+
         if not self._agent_running:
             return
         self._agent_running = False
+        self._agent_cancelled.set()
         if self._agent_queue:
             try:
                 self._agent_queue.put_nowait(None)
@@ -201,7 +267,18 @@ class AudioService:
             return
 
         full_prompt = self._format_agent_prompt(prompt_text)
+
+        # Check if cancelled before starting
+        if self._agent_cancelled.is_set():
+            print(f"[{_ts()}] [AGENT] Cancelled before generation")
+            return
+
         response = self.ollama_client.generate(self.agent_model, full_prompt, False)
+
+        # Check if cancelled after generation (barge-in during LLM call)
+        if self._agent_cancelled.is_set():
+            print(f"[{_ts()}] [AGENT] Cancelled after generation (barge-in)")
+            return
         if not response:
             if self._on_agent:
                 self._on_agent({
@@ -245,10 +322,61 @@ class AudioService:
         lines.append(current_text)
         return "\n".join(lines)
     
+    def _accumulate_turn(self, text: str):
+        """
+        Add text to the turn buffer and reset the silence timer.
+        The turn is only sent to the LLM after TURN_SILENCE_TIMEOUT seconds
+        of silence (no new 'final' results).
+        """
+        with self._turn_lock:
+            self._turn_buffer.append(text)
+            
+            # Cancel previous timer
+            if self._turn_timer:
+                self._turn_timer.cancel()
+            
+            # Start new timer
+            self._turn_timer = threading.Timer(
+                TURN_SILENCE_TIMEOUT,
+                self._flush_turn_buffer
+            )
+            self._turn_timer.daemon = True
+            self._turn_timer.start()
+            
+            buffer_preview = " ".join(self._turn_buffer)
+            print(f"[{_ts()}] [TURN] Accumulated ({len(self._turn_buffer)} parts, {TURN_SILENCE_TIMEOUT}s timer): {buffer_preview[:80]}...")
+
+    def _flush_turn_buffer(self):
+        """
+        Called when the silence timer expires.
+        Combines all accumulated text and sends it to the LLM as one prompt.
+        """
+        with self._turn_lock:
+            if not self._turn_buffer:
+                return
+            combined_text = " ".join(self._turn_buffer)
+            self._turn_buffer.clear()
+            self._turn_timer = None
+        
+        print(f"[{_ts()}] [TURN] Flushing to LLM: {combined_text[:100]}...")
+        self._enqueue_agent_prompt(combined_text)
+
     def _handle_final(self, text: str, confidence: float):
         """Internal handler for final transcriptions."""
+        
+        
+        # Ignore empty or whitespace-only
+        if not text or len(text.strip()) == 0:
+            return
+        # Vosk 'hallucinations' on silence often have 0 confidence and are short stop words
+        # Only filter specific known hallucinations to avoid blocking legitimate one-word commands (like "Stop", "Yes")
+        hallucinations = {"the", "a", "an", "and", "but", "or", "so", "of", "to"}
+        if confidence == 0.0 and text.strip().lower() in hallucinations:
+            print(f"[{_ts()}] Ignoring silent hallucination: '{text}'")
+            return
+
         try:
-            print(f"Final ({self.input_lang_code}): {text}")
+            print(f"[{_ts()}] Final ({self.input_lang_code}): {text}")
             
             translated_text = text  # Default to original if no translation
             if self.translator:
@@ -268,13 +396,17 @@ class AudioService:
 
             if self.agent_enabled and self.ollama_client and self._on_agent:
                 prompt_text = text or translated_text
-                self._enqueue_agent_prompt(prompt_text)
+                self._accumulate_turn(prompt_text)
                 
         except Exception as e:
-            print(f"Translation error: {e}")
+            print(f"[{_ts()}] Translation error: {e}")
     
     def _handle_partial(self, text: str):
         """Internal handler for partial transcriptions."""
+        # Barge-in: if TTS is speaking and user starts talking, interrupt it
+        if self._tts_speaking and text and text.strip():
+            self.barge_in()
+
         message = {
             "type": "partial",
             "original": text

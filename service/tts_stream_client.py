@@ -1,14 +1,19 @@
 import asyncio
 import json
 import os
+from datetime import datetime
 from typing import Optional, Callable, Awaitable, Dict, Any, List
 
 import websockets
 
 TTS_STREAM_URL = os.getenv("TTS_STREAM_URL", "ws://localhost:8001/ws/tts-stream")
+
+def _ts():
+    return datetime.now().strftime('%H:%M:%S.%f')[:-3]
+
 DEFAULT_BUFFER_SIZE = 1
 LOW_BITRATE_SAMPLE_RATE = 12000
-LOW_LATENCY_MODE = "low"
+LOW_LATENCY_MODE = "balanced" # low, balanced, high
 
 
 class TTSStreamClient:
@@ -19,6 +24,7 @@ class TTSStreamClient:
         voice: Optional[str] = None,
         buffer_size: int = DEFAULT_BUFFER_SIZE,
         low_bitrate: bool = True,
+        audio_format: str = "opus", # opus or wav
         on_event: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None,
     ):
         self.url = url
@@ -26,6 +32,7 @@ class TTSStreamClient:
         self.voice = voice
         self.buffer_size = buffer_size
         self.low_bitrate = low_bitrate
+        self.audio_format = audio_format
         self.on_event = on_event
 
         self.available_voices: List[str] = []
@@ -34,7 +41,7 @@ class TTSStreamClient:
         self._send_lock = asyncio.Lock()
 
     async def connect(self):
-        print(f"[TTS-CLIENT] connecting to {self.url}")
+        print(f"[{_ts()}] [TTS-CLIENT] connecting to {self.url}")
         self._ws = await websockets.connect(self.url)
         greeting = await self._ws.recv()
         data = json.loads(greeting)
@@ -45,7 +52,7 @@ class TTSStreamClient:
             or []
         )
         self.available_voices = voices
-        print(f"[TTS-CLIENT] voices available: {self.available_voices}")
+        print(f"[{_ts()}] [TTS-CLIENT] voices available: {self.available_voices}")
 
         if self.on_event:
             await self.on_event({
@@ -57,7 +64,8 @@ class TTSStreamClient:
         config = {
             "type": "config",
             "language": self.voice or self.language,
-            "buffer_size": self.buffer_size
+            "buffer_size": self.buffer_size,
+            "format": self.audio_format
         }
         if self.low_bitrate:
             config["sample_rate"] = LOW_BITRATE_SAMPLE_RATE
@@ -66,7 +74,7 @@ class TTSStreamClient:
             config["temperature"] = 0.4
             config["max_chars"] = 100
 
-        print(f"[TTS-CLIENT] sending config: {config}")
+        print(f"[{_ts()}] [TTS-CLIENT] sending config: {config}")
         await self._send(config)
 
         self._recv_task = asyncio.create_task(self._recv_loop())

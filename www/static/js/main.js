@@ -366,6 +366,10 @@ function handleMessage(data) {
     else if (data.type === 'tts_interrupted') {
         resetTtsPlayback();
     }
+    else if (data.type === 'tts_barge_in') {
+        console.log('[BARGE-IN] User interrupted, stopping TTS playback');
+        resetTtsPlayback();
+    }
     else if (data.type === 'agent') {
         const container = document.createElement('div');
         if (data.status === 'ok') {

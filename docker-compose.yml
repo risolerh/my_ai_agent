@@ -1,7 +1,8 @@
 services:
   stt-api:
     build: .
-    container_name: my_ai_agent
+    container_name: stt-api
+    restart: unless-stopped
     environment:
       - SAMPLE_RATE=16000
       - HF_HOME=/app/models_translate

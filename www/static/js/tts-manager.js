@@ -74,14 +74,14 @@ class TTSManager {
         const rawBuffer = this._base64ToArrayBuffer(base64Data);
         let audioBuffer = null;
 
-        if (this._isWavBuffer(rawBuffer)) {
-            try {
-                audioBuffer = await this.context.decodeAudioData(rawBuffer.slice(0));
-            } catch (e) {
-                console.error('TTS WAV decode error', e);
-                return;
-            }
-        } else {
+        try {
+            // Attempt to decode as WAV, OGG, MP3, etc.
+            const tempBuffer = rawBuffer.slice(0);
+            audioBuffer = await this.context.decodeAudioData(tempBuffer);
+            console.log(`[TTS] Decoded audio: ${audioBuffer.duration.toFixed(2)}s, channels: ${audioBuffer.numberOfChannels}, rate: ${audioBuffer.sampleRate}`);
+        } catch (e) {
+            console.warn(`[TTS] decodeAudioData failed, trying manual PCM fallback. Error: ${e.message}`);
+            // Fallback: Assume Raw PCM 16-bit
             const int16 = new Int16Array(rawBuffer);
             const float32 = new Float32Array(int16.length);
             for (let i = 0; i < int16.length; i++) {
@@ -120,11 +120,4 @@ class TTSManager {
         return buffer;
     }
 
-    _isWavBuffer(buffer) {
-        const bytes = new Uint8Array(buffer);
-        if (bytes.length < 12) return false;
-        const riff = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
-        const wave = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
-        return riff === 'RIFF' && wave === 'WAVE';
-    }
 }

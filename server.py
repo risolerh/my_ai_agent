@@ -9,7 +9,11 @@ from service.tts_stream_service import TTSStreamService
 import requests
 import asyncio
 import os
+from datetime import datetime
 from typing import Optional
+
+def _ts():
+    return datetime.now().strftime('%H:%M:%S.%f')[:-3]
 
 app = FastAPI()
 
@@ -70,7 +74,7 @@ async def get_tts_voices():
             data = response.json()
             return {"voices": data.get("voices", [])}
     except Exception as e:
-        print(f"TTS voices error: {e}")
+        print(f"[{_ts()}] TTS voices error: {e}")
     return {"voices": []}
 
 # Global instances cache
@@ -86,7 +90,7 @@ try:
     if fetched_models:
         OLLAMA_MODELS = fetched_models
 except Exception as e:
-    print(f"Failed to fetch models from Ollama: {e}")
+    print(f"[{_ts()}] Failed to fetch models from Ollama: {e}")
 
 DEFAULT_OLLAMA_MODEL = OLLAMA_MODELS[0]
 
@@ -96,7 +100,7 @@ DEFAULT_OLLAMA_MODEL = OLLAMA_MODELS[0]
 DEFAULT_INPUT_MODEL_ID = "2" # Default to English Complete
 DEFAULT_OUTPUT_LANG = os.getenv("OUTPUT_LANG", "es")
 
-print(f"Pre-downloading default model ID {DEFAULT_INPUT_MODEL_ID}...")
+print(f"[{_ts()}] Pre-downloading default model ID {DEFAULT_INPUT_MODEL_ID}...")
 default_model_info = AVAILABLE_MODELS.get(DEFAULT_INPUT_MODEL_ID)
 if default_model_info:
     ensure_model(os.path.join(MODELS_DIR, default_model_info["name"]))
@@ -152,7 +156,7 @@ async def websocket_endpoint(
             try:
                 await websocket.send_json(msg)
             except Exception as e:
-                print(f"Error sending message: {e}")
+                print(f"[{_ts()}] Error sending message: {e}")
 
         if agent_enabled_flag:
             tts_language = voice_id or "default"
@@ -178,9 +182,25 @@ async def websocket_endpoint(
                     loop
                 )
         
+        def on_barge_in():
+            """Called from AudioService when user interrupts TTS."""
+            if tts_service:
+                asyncio.run_coroutine_threadsafe(
+                    tts_service.barge_in(),
+                    loop
+                )
+
+        def on_speaking_changed(is_speaking: bool):
+            """Called when TTS starts/stops speaking."""
+            service.set_tts_speaking(is_speaking)
+
         service.set_on_partial(on_partial)
         service.set_on_final(on_final)
         service.set_on_agent(on_agent)
+        service.set_on_barge_in(on_barge_in)
+
+        if tts_service:
+            tts_service.set_on_speaking_changed(on_speaking_changed)
 
         await send_message({
             "type": "ready",
@@ -191,7 +211,7 @@ async def websocket_endpoint(
         if tts_service:
             asyncio.create_task(tts_service.start())
         
-        print(f"Ready to process audio stream ({service.input_lang_code} -> {output_lang})...")
+        print(f"[{_ts()}] Ready to process audio stream ({service.input_lang_code} -> {output_lang})...")
         
         # Process incoming audio stream
         while True:
@@ -199,16 +219,16 @@ async def websocket_endpoint(
             await service.process_audio(data) # Envía el audio al servicio STT
             
     except WebSocketDisconnect:
-        print("Client disconnected")
+        print(f"[{_ts()}] Client disconnected")
     except Exception as e:
-        print(f"Connection error: {e}")
+        print(f"[{_ts()}] Connection error: {e}")
     finally:
         service.shutdown()
         if tts_service:
             try:
                 await tts_service.close()
             except Exception as e:
-                print(f"TTS close error: {e}")
+                print(f"[{_ts()}] TTS close error: {e}")
 
 
 if __name__ == "__main__":
