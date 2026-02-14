@@ -1,29 +1,24 @@
 services:
-  stt-api:
-    build: .
-    container_name: stt-api
+  service-agent-voice:
+    image: service-agent-voice:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: service-agent-voice
     restart: unless-stopped
-    environment:
-      - SAMPLE_RATE=16000
-      - HF_HOME=/app/models_translate
-      - VOSK_MODEL_PATH=./models/vosk-model-en-us-0.22
-      - OLLAMA_BASE_URL=http://myhost:11434
-      - TTS_STREAM_URL=ws://myhost:8001/ws/tts-stream
-      - TTS_HTTP_URL=http://myhost:8001
-    extra_hosts:
-      - "myhost:192.168.1.2"
     ports:
-      - "192.168.1.2:8000:8000"
-    # network_mode: "host"
-    volumes:
-      - ./:/app
-      - ./models:/app/models
-      # Persistir modelos de traducción de Hugging Face
-      - ./models_translate:/app/models_translate
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [ gpu ]
+      - "8000:8000"
+    environment:
+      # External gRPC/HTTP routes
+      - STT_SERVICE_HOST=${STT_SERVICE_HOST:-host.docker.internal}
+      - STT_SERVICE_PORT=${STT_SERVICE_PORT:-5002}
+      - TRANSLATE_SERVICE_HOST=${TRANSLATE_SERVICE_HOST:-host.docker.internal}
+      - TRANSLATE_SERVICE_PORT=${TRANSLATE_SERVICE_PORT:-5001}
+      - TTS_HTTP_URL=${TTS_HTTP_URL:-http://host.docker.internal:8004}
+      - TTS_STREAM_URL=${TTS_STREAM_URL:-ws://host.docker.internal:8004/ws/tts-stream}
+      # Structured flow logs for conversation tracing
+      - FLOW_LOG_LEVEL=${FLOW_LOG_LEVEL:-INFO}
+      - FLOW_LOG_PARTIALS=${FLOW_LOG_PARTIALS:-0}
+      - FLOW_LOG_DISABLED=${FLOW_LOG_DISABLED:-0}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

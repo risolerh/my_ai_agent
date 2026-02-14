@@ -7,6 +7,9 @@ class AudioManager {
         this.stream = null;
         this.audioContext = null;
         this.processor = null;
+        this.sourceNode = null;
+        this.monitorGain = null;
+        this.isStarting = false;
         this.onAudioDataCallback = null;
     }
 
@@ -16,6 +19,11 @@ class AudioManager {
      * @param {Object} visualizerCallback - Optional function to initialize visualizer.
      */
     async start(onAudioDataCallback, visualizerCallback) {
+        if (this.isStarting || this.stream || this.audioContext) {
+            return false;
+        }
+
+        this.isStarting = true;
         this.onAudioDataCallback = onAudioDataCallback;
 
         try {
@@ -23,7 +31,10 @@ class AudioManager {
             this.stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     channelCount: 1,
-                    sampleRate: 16000
+                    sampleRate: 16000,
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
                 }
             });
 
@@ -45,7 +56,11 @@ class AudioManager {
             };
 
             source.connect(workletNode);
-            workletNode.connect(this.audioContext.destination);
+            // Keep graph alive without monitoring mic to speakers (prevents acoustic feedback loops).
+            this.monitorGain = this.audioContext.createGain();
+            this.monitorGain.gain.value = 0;
+            workletNode.connect(this.monitorGain);
+            this.monitorGain.connect(this.audioContext.destination);
 
             // Initialize visualizer if provided
             if (visualizerCallback && typeof visualizerCallback === 'function') {
@@ -53,11 +68,15 @@ class AudioManager {
             }
 
             this.processor = workletNode;
+            this.sourceNode = source;
             return true;
 
         } catch (e) {
             console.error("Audio access error", e);
+            this.stop();
             throw e;
+        } finally {
+            this.isStarting = false;
         }
     }
 
@@ -65,16 +84,39 @@ class AudioManager {
      * Stops audio capture and closes context.
      */
     stop() {
+        if (this.processor) {
+            try {
+                this.processor.port.onmessage = null;
+                this.processor.disconnect();
+            } catch (_) { }
+        }
+        if (this.sourceNode) {
+            try {
+                this.sourceNode.disconnect();
+            } catch (_) { }
+            this.sourceNode = null;
+        }
+        if (this.monitorGain) {
+            try {
+                this.monitorGain.disconnect();
+            } catch (_) { }
+            this.monitorGain = null;
+        }
         if (this.stream) {
             this.stream.getTracks().forEach(track => track.stop());
             this.stream = null;
         }
         if (this.audioContext) {
-            this.audioContext.close();
+            this.audioContext.close().catch(() => { });
             this.audioContext = null;
         }
         this.processor = null; // Processor is disconnected when context closes
         this.onAudioDataCallback = null;
+        this.isStarting = false;
+    }
+
+    isActive() {
+        return this.isStarting || this.stream !== null || this.audioContext !== null;
     }
 
     /**

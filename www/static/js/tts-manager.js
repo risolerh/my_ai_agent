@@ -9,6 +9,7 @@ class TTSManager {
         this.activeNodes = [];
         this.nextPlayTime = 0;
         this.bufferSeconds = 0.15;
+        this.preferredSampleRate = 16000;
     }
 
     /**
@@ -25,6 +26,17 @@ class TTSManager {
             this.context = new AudioContext({ sampleRate });
             this.nextPlayTime = 0;
             this.activeNodes = [];
+        }
+    }
+
+    /**
+     * Prepare AudioContext from a user gesture to avoid autoplay blocking.
+     * @param {number} sampleRate
+     */
+    async prepare(sampleRate) {
+        this._ensureContext(sampleRate || this.preferredSampleRate);
+        if (this.context && this.context.state === 'suspended') {
+            await this.context.resume();
         }
     }
 
@@ -67,7 +79,8 @@ class TTSManager {
             try {
                 await this.context.resume();
             } catch (e) {
-                // ignore
+                console.warn(`[TTS] AudioContext resume blocked: ${e.message}`);
+                return;
             }
         }
 

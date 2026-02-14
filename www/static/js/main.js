@@ -12,6 +12,17 @@ const SERVICES = {
 };
 
 const ws = { current: null }; // Wrapper to hold WS reference
+const streamState = {
+    starting: false,
+    stopping: false
+};
+
+function hasActiveSocket() {
+    return Boolean(
+        ws.current &&
+        (ws.current.readyState === WebSocket.CONNECTING || ws.current.readyState === WebSocket.OPEN)
+    );
+}
 
 function getHttpUrl(path) {
     const base = SERVICES.httpBase || window.location.origin;
@@ -217,7 +228,20 @@ function setButtonsState(state) {
 }
 
 async function startStream() {
+    if (streamState.starting || streamState.stopping || hasActiveSocket() || audioManager.isActive()) {
+        return;
+    }
+
+    streamState.starting = true;
+
     try {
+        // Unlock TTS audio context while we are still in a user gesture.
+        try {
+            await ttsManager.prepare(16000);
+        } catch (e) {
+            console.warn('[TTS] prepare failed:', e?.message || e);
+        }
+
         // Initialize WebSocket with selected languages
         setButtonsState('connecting');
         setStatus('Conectando...', '#fff0aa');
@@ -239,25 +263,30 @@ async function startStream() {
         const url = getWsUrl(SERVICES.streamPath, params);
 
         console.log("Connecting to", url);
-        console.log("Connecting to", url);
-        ws.current = new WebSocket(url);
-        ws.current.binaryType = 'arraybuffer';
+        const socket = new WebSocket(url);
+        socket.binaryType = 'arraybuffer';
+        ws.current = socket;
 
-        ws.current.onopen = () => {
+        socket.onopen = () => {
+            if (ws.current !== socket) {
+                socket.close();
+                return;
+            }
             setStatus('Conectando...', '#fff0aa');
-            startAudio();
+            startAudio(socket);
         };
 
-        ws.current.onclose = () => {
-            stopStream();
+        socket.onclose = () => {
+            if (ws.current !== socket) return;
+            stopStream(true);
         };
 
-        ws.current.onerror = (e) => {
+        socket.onerror = (e) => {
             console.error("WS Error", e);
             setStatus('Error', '#ffaa00');
         };
 
-        ws.current.onmessage = (event) => {
+        socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             handleMessage(data);
         };
@@ -267,15 +296,21 @@ async function startStream() {
         setButtonsState('stopped');
         setStatus('', '#eee');
         alert("Error starting: " + e.message);
+    } finally {
+        streamState.starting = false;
     }
 }
 
-async function startAudio() {
+async function startAudio(socket) {
+    if (!socket || ws.current !== socket || audioManager.isActive()) {
+        return;
+    }
+
     try {
         await audioManager.start(
             (data) => {
-                if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-                    ws.current.send(data);
+                if (ws.current === socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(data);
                 }
             },
             (stream, context, source) => {
@@ -287,17 +322,28 @@ async function startAudio() {
         );
     } catch (e) {
         alert("Could not access microphone: " + e.message);
-        if (ws.current) ws.current.close();
+        if (ws.current === socket) socket.close();
     }
 }
 
-function stopStream() {
+function stopStream(fromSocketClose = false) {
+    if (streamState.stopping) {
+        return;
+    }
+    streamState.stopping = true;
+
     audioManager.stop();
     ttsManager.close();
 
-    if (ws.current) {
-        ws.current.close();
-        ws.current = null;
+    const socket = ws.current;
+    ws.current = null;
+    if (socket && !fromSocketClose) {
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.onmessage = null;
+        if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
+            socket.close();
+        }
     }
     resetTtsPlayback(); 
     if (typeof stopVisualizer === 'function') {
@@ -305,92 +351,11 @@ function stopStream() {
     }
     setButtonsState('stopped');
     setStatus('', '#eee');
+    streamState.starting = false;
+    streamState.stopping = false;
 }
 
-function handleMessage(data) {
-    if (data.type === 'partial') {
-        if (!currentPartialEl) {
-            currentPartialEl = document.createElement('div');
-            currentPartialEl.className = 'partial';
-            logEl.appendChild(currentPartialEl);
-        }
-        currentPartialEl.textContent = ">> " + data.original;
-        logEl.scrollTop = logEl.scrollHeight;
-    }
-    else if (data.type === 'final') {
-        if (currentPartialEl) {
-            currentPartialEl.remove();
-            currentPartialEl = null;
-        }
 
-        const container = document.createElement('div');
-        // Dynamic labels based on returned data or selection
-        const inLang = data.input_lang || 'SRC';
-        const outLang = data.output_lang || 'TGT';
-
-        container.innerHTML = `
-            <div class="final"><b>[${inLang.toUpperCase()}]</b> ${data.original} <span style="font-size:0.8em;color:#aaa">(${data.confidence.toFixed(2)})</span></div>
-            <div class="translation"><b>[${outLang.toUpperCase()}]</b> ${data.translation}</div>
-            <hr/>
-        `;
-        logEl.appendChild(container);
-        logEl.scrollTop = logEl.scrollHeight;
-    }
-    else if (data.type === 'ready') {
-        setButtonsState('streaming');
-        if (data.input_lang) {
-            currentInputLangCode = data.input_lang;
-            updateVoiceOptions();
-        }
-        setStatus('Conectado', '#aaffaa');
-    }
-    else if (data.type === 'tts_voices') {
-        ttsVoices = normalizeVoices(data.voices || []);
-        updateVoiceOptions();
-    }
-    else if (data.type === 'tts_audio') {
-        if (data.data) {
-            playTtsChunk(data.data, data.sample_rate).catch(() => { });
-        }
-    }
-    else if (data.type === 'tts_error') {
-        const container = document.createElement('div');
-        const errorText = data.error || "TTS error";
-        container.innerHTML = `
-            <div class="agent agent-error"><b>[TTS]</b> ${errorText}</div>
-            <hr/>
-        `;
-        logEl.appendChild(container);
-        logEl.scrollTop = logEl.scrollHeight;
-    }
-    else if (data.type === 'tts_interrupted') {
-        resetTtsPlayback();
-    }
-    else if (data.type === 'tts_barge_in') {
-        console.log('[BARGE-IN] User interrupted, stopping TTS playback');
-        resetTtsPlayback();
-    }
-    else if (data.type === 'agent') {
-        const container = document.createElement('div');
-        if (data.status === 'ok') {
-            container.innerHTML = `
-                <div class="agent"><b>[AGENT • ${data.model}]</b> ${data.response}</div>
-                <hr/>
-            `;
-            if (voiceEnabledEl.checked) {
-                resetTtsPlayback();
-            }
-        } else {
-            const errorText = data.error || "Agent error";
-            container.innerHTML = `
-                <div class="agent agent-error"><b>[AGENT • ${data.model}]</b> ${errorText}</div>
-                <hr/>
-            `;
-        }
-        logEl.appendChild(container);
-        logEl.scrollTop = logEl.scrollHeight;
-    }
-}
 
 function toggleLog(action) {
     const container = document.getElementById('log-container');

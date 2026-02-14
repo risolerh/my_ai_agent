@@ -87,3 +87,32 @@
     border-left-color: #f44336;
     color: #c62828;
 }
+
+.agent.agent-streaming {
+    border-left-color: #2196f3;
+    background-color: #e3f2fd;
+    animation: agent-pulse 1.5s ease-in-out infinite;
+}
+
+.agent-cursor {
+    display: inline;
+    animation: blink 0.7s step-end infinite;
+    color: #2196f3;
+    font-weight: bold;
+}
+
+.agent.agent-cancelled {
+    border-left-color: #ff9800;
+    background-color: #fff3e0;
+    opacity: 0.75;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+@keyframes agent-pulse {
+    0%, 100% { border-left-color: #2196f3; }
+    50% { border-left-color: #90caf9; }
+}

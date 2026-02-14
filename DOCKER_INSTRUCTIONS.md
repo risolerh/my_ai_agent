@@ -1,73 +1,31 @@
-# Dockerized STT & Translation API Implementation
+# Docker Instructions
 
-This implementation provides a GPU-accelerated Microservice for Speech-to-Text and Translation using Docker.
+Este repositorio funciona como **gateway** y depende de microservicios externos (`service_stt`, `service_translate`, `service-tts`).
 
-## Components
-- **server.py**: FastAPI application exposing a WebSocket endpoint.
-- **Dockerfile**: Optimized image based on `nvidia/cuda` with Python 3.10.
-- **docker-compose.yml**: Orchestrates the service with GPU resource reservation.
-- **modules/audio_listener.py**: Refactored to separate speech processing logic (`SpeechProcessor`) from microphone input.
+## Levantar stack completo
 
-## Prerequisites
-- Docker & Docker Compose
-- NVIDIA GPU Driver
-- **NVIDIA Container Toolkit** (Must be installed to allow Docker to access GPU)
-  - [Installation Guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-
-## Quick Start
-
-### 1. Build and Run
 ```bash
 docker compose up --build
 ```
-*First run will download the Vosk model if not present.*
 
-### 2. Verify
-Open http://localhost:8000/ in your browser.
-- Click "Start Streaming".
-- Allow microphone access.
-- Speak into your microphone.
-  - You should see partial transcriptions in gray.
-  - Final transcriptions (English) and translations (Spanish) will appear in black and blue.
+Incluye:
+- `service-agent-voice` (gateway + frontend)
+- `service-stt`
+- `service-translate`
+- `service-tts`
 
-## API Documentation
+## URLs/puertos esperados
+- Agent: `http://localhost:8000`
+- STT: gRPC `localhost:5002`, REST `localhost:8003`
+- Translate: gRPC `localhost:5001`, REST `localhost:8002`
+- TTS: gRPC `localhost:5003`, REST/WS `localhost:8004`
 
-**WebSocket Endpoint**: `ws://localhost:8000/ws/stream?input_lang={code}&output_lang={code}`
-- `input_lang`: Language code for STT (e.g., 'en', 'es'). Default: 'en'.
-- `output_lang`: Language code for Translation (e.g., 'es', 'fr'). Default: 'es'.
+## Verificación rápida
+1. Abrir `http://localhost:8000`.
+2. Verificar que `GET /api/tts-voices` responda con lista de voces.
+3. Iniciar stream en frontend y confirmar eventos `partial`/`final`.
 
-**Helper Endpoints**:
-- `GET /api/models`: Returns list of available input STT models/languages.
-- `GET /api/languages`: Returns list of supported output translation languages.
-
-**Input Protocol**:
-- Binary messages: Raw PCM Audio
-- Format: 16-bit Integer, Little Endian, Monophonic.
-- Sample Rate: **16000 Hz** (Must match server config).
-
-**Output Protocol (JSON)**:
-
-**Partial Result**:
-```json
-{
-  "type": "partial",
-  "original": "hello world"
-}
-```
-
-**Final Result**:
-```json
-{
-  "type": "final",
-  "original": "hello world",
-  "translation": "hola mundo",
-  "confidence": 0.95,
-  "input_lang": "en",
-  "output_lang": "es"
-}
-```
-
-## Configuration
-Environment variables in `docker-compose.yml`:
-- `VOSK_MODEL_PATH`: Path to Vosk model (default: `./models/vosk-model-en-us-0.22`)
-- `SAMPLE_RATE`: Audio sample rate (default: `16000`)
+## Configuración por env vars (agent)
+- `STT_SERVICE_HOST`, `STT_SERVICE_PORT`
+- `TRANSLATE_SERVICE_HOST`, `TRANSLATE_SERVICE_PORT`
+- `TTS_HTTP_URL`, `TTS_STREAM_URL`

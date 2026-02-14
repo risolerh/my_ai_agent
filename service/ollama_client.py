@@ -1,6 +1,7 @@
 import requests
 import json
 import os
+import threading
 
 class OllamaClient:
     def __init__(self):
@@ -23,12 +24,12 @@ class OllamaClient:
             #     # 'models' is the key in recent versions of Ollama API
             #     return [model['name'] for model in data.get('models', [])]
             return [
+                "qwen3:14b",
                 "sam860/lfm2.5:1.2b-F16",
                 "qwen3-coder:30b",
                 "qwen2.5-coder:14b",
                 "sam860/LFM2:8b",
                 "ministral-3:14b",
-                "qwen3:14b"
                 # "qwen3-embedding:4b",
                 # "qwen3-embedding:8b",
                 # "codestral:22b",
@@ -62,10 +63,14 @@ class OllamaClient:
                  return False
         return True
 
-    def generate(self, model, prompt, stream=False, callback=None):
+    def generate(self, model, prompt, stream=False, callback=None,
+                 cancel_event: threading.Event = None):
         """
         Generate text response.
         If stream=True and callback provided, calls callback(text_chunk) for each chunk.
+        If cancel_event is provided (threading.Event), the streaming request will be
+        aborted when the event is set, closing the HTTP connection so Ollama stops
+        generating tokens.
         """
         url = f"{self.base_url}/api/generate"
         payload = {
@@ -76,18 +81,26 @@ class OllamaClient:
         
         try:
             if stream:
-                response = requests.post(url, json=payload, stream=True, timeout=30)
+                response = requests.post(url, json=payload, stream=True, timeout=120)
                 full_text = ""
-                for line in response.iter_lines():
-                    if line:
-                        data = json.loads(line)
-                        chunk = data.get("response", "")
-                        full_text += chunk
-                        if callback:
-                            callback(chunk)
+                try:
+                    for line in response.iter_lines():
+                        # Check cancellation before processing each chunk
+                        if cancel_event and cancel_event.is_set():
+                            print(f"[OllamaClient] Generation cancelled mid-stream")
+                            response.close()
+                            return None
+                        if line:
+                            data = json.loads(line)
+                            chunk = data.get("response", "")
+                            full_text += chunk
+                            if callback:
+                                callback(chunk)
+                finally:
+                    response.close()
                 return full_text
             else:
-                response = requests.post(url, json=payload, timeout=30)
+                response = requests.post(url, json=payload, timeout=120)
                 if response.status_code == 200:
                     return response.json().get('response', "")
                 else:

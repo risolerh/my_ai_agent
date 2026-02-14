@@ -6,7 +6,7 @@ from typing import Optional, Callable, Awaitable, Dict, Any, List
 
 import websockets
 
-TTS_STREAM_URL = os.getenv("TTS_STREAM_URL", "ws://localhost:8001/ws/tts-stream")
+TTS_STREAM_URL = os.getenv("TTS_STREAM_URL", "ws://localhost:8000/ws/tts-stream")
 
 def _ts():
     return datetime.now().strftime('%H:%M:%S.%f')[:-3]

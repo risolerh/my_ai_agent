@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 import sounddevice as sd
 import os
+import traceback
 
 WIDTH_SIZE = 600
 from modules.model_selector import AVAILABLE_MODELS, MODELS_DIR
@@ -12,6 +13,8 @@ class Page:
         self.root = tk.Tk()
         self.root.title(title)
         self.root.geometry(size)
+        self._is_closing = False
+        self._mainloop_running = False
         
         self._on_config_change = None
         self._on_close = None
@@ -41,10 +44,25 @@ class Page:
     
     def on_closing(self):
         """Maneja el cierre limpio de la aplicación."""
+        if self._is_closing:
+            return
+        self._is_closing = True
+
         if self._on_close:
-            self._on_close()
-        self.root.quit()
-        self.root.destroy()
+            try:
+                self._on_close()
+            except Exception:
+                traceback.print_exc()
+
+        try:
+            self.root.quit()
+        except tk.TclError:
+            pass
+
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
 
     def _create_config_section(self):
         """Panel de configuración con dropdowns."""
@@ -101,23 +119,21 @@ class Page:
         self.status_label.pack(anchor="w", pady=(5, 0))
 
     def _update_model_list(self):
-        """Actualiza lista de modelos disponibles."""
+        """Actualiza lista de modelos disponibles desde metadata (gestionados por service_stt)."""
         models = []
-        for info in AVAILABLE_MODELS.values():
+        model_items = sorted(AVAILABLE_MODELS.items(), key=lambda item: int(item[0]))
+        default_index = 0
+
+        for idx, (model_id, info) in enumerate(model_items):
             model_name = info["name"]
             display_name = info["lang"]
-            model_path = os.path.join(MODELS_DIR, model_name)
-            if os.path.isdir(model_path):
-                models.append(f"✓ {display_name} ({model_name})")
-            else:
-                models.append(f"○ {display_name} ({model_name})")
-        
-        self.model_combo['values'] = models
-        # Seleccionar primer modelo descargado
-        for i, m in enumerate(models):
-            if m.startswith("✓"):
-                self.model_combo.current(i)
-                break
+            models.append(f"✓ {display_name} ({model_name})")
+            if model_id == "2":
+                default_index = idx
+
+        self.model_combo["values"] = models
+        if models:
+            self.model_combo.current(default_index)
 
     def _update_device_list(self):
         """Actualiza lista de dispositivos de audio."""
@@ -210,12 +226,19 @@ class Page:
 
     def set_status(self, text, color="green"):
         """Actualiza el estado."""
-        self.status_label.config(text=text, fg=color)
+        def update():
+            if self._is_closing:
+                return
+            self.status_label.config(text=text, fg=color)
+
+        self._schedule_ui(update)
     
     def update_audio_level(self, level):
         """Actualiza la barra de nivel de audio (0.0-1.0) - thread-safe."""
         def update():
             try:
+                if self._is_closing:
+                    return
                 width = self.audio_level_canvas.winfo_width()
                 bar_width = int(width * min(level * 3, 1.0))  # Amplificar x3 para mejor visualización
                 
@@ -231,9 +254,8 @@ class Page:
                 self.audio_level_canvas.itemconfig(self.audio_level_bar, fill=color)
             except:
                 pass  # Ignorar si la ventana está cerrada
-        
-        # Ejecutar en el thread principal
-        self.root.after(0, update)
+
+        self._schedule_ui(update)
 
     def _create_top_section(self):
         container = tk.Frame(self.main_paned)
@@ -295,44 +317,88 @@ class Page:
         self.second_text.config(state="disabled")
 
     def add_traduction(self, eng, esp, confidence=None):
-        self.history_text.config(state="normal")
-        
-        # Texto inglés con indicador de confianza
-        eng_text = eng
-        if confidence is not None:
-            conf_percent = int(confidence * 100)
-            # Solo mostrar porcentaje si es real (mayor a 0)
-            if conf_percent > 0:
-                eng_text = f"{eng} [{conf_percent}%]"
-        
-        # Insertar en el Text widget
-        self.history_text.insert(tk.END, f"{eng_text}\n", "eng")
-        self.history_text.insert(tk.END, f"{esp}\n", "esp")
-        self.history_text.insert(tk.END, f"{'-'*40}\n", "sep")
-        
-        self.history_text.see(tk.END)  # Auto-scroll
-        self.history_text.config(state="disabled")
+        def update():
+            if self._is_closing:
+                return
+            self.history_text.config(state="normal")
+            
+            # Texto inglés con indicador de confianza
+            eng_text = eng
+            if confidence is not None:
+                conf_percent = int(confidence * 100)
+                # Solo mostrar porcentaje si es real (mayor a 0)
+                if conf_percent > 0:
+                    eng_text = f"{eng} [{conf_percent}%]"
+            
+            # Insertar en el Text widget
+            self.history_text.insert(tk.END, f"{eng_text}\n", "eng")
+            self.history_text.insert(tk.END, f"{esp}\n", "esp")
+            self.history_text.insert(tk.END, f"{'-'*40}\n", "sep")
+            
+            self.history_text.see(tk.END)  # Auto-scroll
+            self.history_text.config(state="disabled")
+
+        self._schedule_ui(update)
 
     def update_current_text(self, text):
-        self.english_current_text.config(state="normal")
-        self.english_current_text.delete("1.0", tk.END)
-        self.english_current_text.insert(tk.END, text)
-        self.english_current_text.config(state="disabled")
+        def update():
+            if self._is_closing:
+                return
+            self.english_current_text.config(state="normal")
+            self.english_current_text.delete("1.0", tk.END)
+            self.english_current_text.insert(tk.END, text)
+            self.english_current_text.config(state="disabled")
+
+        self._schedule_ui(update)
 
     def clear_current_text(self):
         """Limpia el cuadro de texto original (realtime)."""
-        self.english_current_text.config(state="normal")
-        self.english_current_text.delete("1.0", tk.END)
-        self.english_current_text.config(state="disabled")
+        def update():
+            if self._is_closing:
+                return
+            self.english_current_text.config(state="normal")
+            self.english_current_text.delete("1.0", tk.END)
+            self.english_current_text.config(state="disabled")
+
+        self._schedule_ui(update)
 
     def update_second_text(self, text):
-        self.second_text.config(state="normal")
-        self.second_text.delete("1.0", tk.END)
-        self.second_text.insert(tk.END, text)
-        self.second_text.config(state="disabled")
+        def update():
+            if self._is_closing:
+                return
+            self.second_text.config(state="normal")
+            self.second_text.delete("1.0", tk.END)
+            self.second_text.insert(tk.END, text)
+            self.second_text.config(state="disabled")
+
+        self._schedule_ui(update)
+
+    @property
+    def is_closing(self) -> bool:
+        return self._is_closing
+
+    def _schedule_ui(self, callback):
+        if self._is_closing:
+            return
+        if not self._mainloop_running:
+            try:
+                callback()
+            except (RuntimeError, tk.TclError):
+                pass
+            return
+        try:
+            self.root.after(0, callback)
+        except (RuntimeError, tk.TclError):
+            # RuntimeError: "main thread is not in main loop"
+            pass
 
     def run(self):
-        self.root.mainloop()
+        self._mainloop_running = True
+        try:
+            self.root.mainloop()
+        finally:
+            self._mainloop_running = False
+            self._is_closing = True
 
 
 if __name__ == "__main__":

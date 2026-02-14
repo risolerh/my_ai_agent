@@ -1,136 +1,170 @@
-from modules.translate import EnglishToSpanishTranslator
-from modules.audio_listener import AudioListener
-from view.page import Page
-from modules.logger import TranscriptionLogger
-from modules.model_selector import ensure_model
 import os
+import signal
+import traceback
 from pathlib import Path
+from typing import Optional
 
-# Configurar rutas (igual que en server/translate modules)
-project_root = Path(__file__).parent
-models_translate_path = project_root / "models_translate"
-if models_translate_path.exists():
-    os.environ["HF_HOME"] = str(models_translate_path.resolve())
-    print(f"Main: HF_HOME set to {os.environ['HF_HOME']}")
+from modules.audio_listener import AudioListener
+from modules.logger import TranscriptionLogger
+from modules.model_selector import AVAILABLE_MODELS
+from modules.translate import EnglishToSpanishTranslator
+from view.page import Page
+
+TARGET_LANG = os.getenv("DESKTOP_TARGET_LANG", "es")
+
+translator: Optional[EnglishToSpanishTranslator] = None
+listener: Optional[AudioListener] = None
+page: Optional[Page] = None
+logger: Optional[TranscriptionLogger] = None
+_closing = False
 
 
+def _resolve_source_lang(model_path: str) -> str:
+    model_name = Path(model_path).name
+    for info in AVAILABLE_MODELS.values():
+        if info["name"] == model_name:
+            return info.get("code", "en")
+    return "en"
 
-# Variables globales
-translator = None
-listener = None
-page = None
-logger = None
+
+def _reset_translator(source_lang: str):
+    global translator
+
+    if translator:
+        translator.close()
+
+    translator = EnglishToSpanishTranslator(source_lang=source_lang, target_lang=TARGET_LANG)
+    translator.start_worker(
+        on_text_ready=page.update_current_text,
+        on_translation_ready=page.update_second_text,
+    )
 
 
-def on_final(english_text, confidence):
-    """Recibe texto y confianza de transcripción."""
-    # Traducir el final siempre, con prioridad
-    spanish_text = translator.translate(english_text)
-    page.add_traduction(english_text, spanish_text, confidence)
-    
-    # Guardar en archivo
+def on_final(text: str, confidence: float):
+    translated = text
+    if translator:
+        translated = translator.translate(text)
+
+    page.add_traduction(text, translated, confidence)
+
     if logger:
-        logger.log(english_text, spanish_text)
-    
-    # Limpiar el texto realtime ya que se confirmó
+        logger.log(text, translated)
+
     page.clear_current_text()
-    
-    print(f"\n[{confidence:.2f}] {english_text}")
+    print(f"[{confidence:.2f}] {text}")
 
 
-def on_current(text):
-    print(text, end="", flush=True)
-
-
-def on_partial(text):
-    # Encolar para traducción en background
+def on_partial(text: str):
     if translator:
         translator.enqueue(text)
 
 
-def on_audio_level(level):
-    """Actualiza el nivel de audio en la UI."""
-    page.update_audio_level(level)
+def on_current(text: str):
+    _ = text
 
 
-def start_listener(model_path, device_id, latency=0.05):
-    """Inicia o reinicia el listener con nueva configuración."""
+def on_audio_level(level: float):
+    if page and not page.is_closing:
+        page.update_audio_level(level)
+
+
+def start_listener(model_path: str, device_id: int, latency: float = 0.05):
     global listener
-    
-    # Mostrar indicador de carga
-    page.set_status("⏳ Cargando modelo...", "orange")
-    page.root.update()  # Forzar actualización de UI
-    
-    # Detener listener anterior si existe
+
+    page.set_status("⏳ Conectando a servicios gRPC...", "orange")
+    page.root.update()
+
     if listener:
         listener.stop()
-    
+
     try:
-        ensure_model(model_path)
+        source_lang = _resolve_source_lang(model_path)
+        _reset_translator(source_lang)
+
         listener = AudioListener(
             model_path=model_path,
             device_id=device_id,
-            latency=latency
+            latency=latency,
         )
         listener.set_on_final(on_final)
         listener.set_on_partial(on_partial)
         listener.set_on_current(on_current)
         listener.set_on_audio_level(on_audio_level)
         listener.listen_in_thread()
-        page.set_status(f"🎙️ Escuchando... (Latencia: {latency:.2f}s)", "green")
-        print(f"\nEscuchando... (modelo: {model_path}, dispositivo: {device_id}, latencia: {latency})")
-        print(f"Sample rate: {listener.sample_rate} Hz, Block size: {listener.block_size}")
+
+        page.set_status(f"🎙️ Escuchando por gRPC... (Latencia: {latency:.2f}s)", "green")
+        print(f"Escuchando... model={model_path} device={device_id} latency={latency}")
     except Exception as e:
-        page.set_status(f"❌ Error: {str(e)[:50]}", "red")
+        page.set_status(f"❌ Error: {str(e)[:60]}", "red")
         print(f"Error iniciando listener: {e}")
 
 
-def on_config_change(model_path, device_id, latency):
-    """Callback cuando cambia la configuración en la UI."""
-    print(f"\n>> Cambiando a modelo: {model_path}, dispositivo: {device_id}, latencia: {latency}")
+def on_config_change(model_path: str, device_id: int, latency: float):
     start_listener(model_path, device_id, latency)
 
 
 def on_app_close():
-    """Limpieza al cerrar la aplicación."""
-    global listener
-    print("\nCerrando aplicación...")
+    global listener, translator, _closing
+
+    if _closing:
+        return
+    _closing = True
+
+    # During shutdown, ignore extra Ctrl+C to avoid noisy atexit traces.
+    try:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except Exception:
+        pass
+
     if listener:
-        listener.stop()
+        try:
+            listener.stop()
+        except Exception:
+            print("Error cerrando listener:")
+            traceback.print_exc()
+        finally:
+            listener = None
+
     if translator:
-        translator.stop_worker()
+        try:
+            translator.close()
+        except Exception:
+            print("Error cerrando traductor:")
+            traceback.print_exc()
+        finally:
+            translator = None
 
 
-# Inicializar
-print("Iniciando Traductor en Tiempo Real...")
+def main():
+    global page, logger, _closing
 
-# Logger service
-logger = TranscriptionLogger()
+    print("Iniciando app de escritorio (gRPC)...")
 
-# Translator service
-translator = EnglishToSpanishTranslator()
+    logger = TranscriptionLogger()
 
-# Screen service
-page = Page()
-page.set_on_config_change(on_config_change)
-page.set_on_close(on_app_close)
+    page = Page(title="Traductor Desktop (gRPC)")
+    page.set_on_config_change(on_config_change)
+    page.set_on_close(on_app_close)
 
-# Iniciar worker de traducción (Background)
-# Callbacks para actualizar la UI: (texto_original, texto_traducido)
-translator.start_worker(
-    on_text_ready=page.update_current_text,
-    on_translation_ready=page.update_second_text
-)
+    model_path = page.get_selected_model_path()
+    device_id = page.get_selected_device_id()
+    latency = page.get_selected_latency()
 
-# Iniciar con configuración seleccionada en la UI
-model_path = page.get_selected_model_path()
-device_id = page.get_selected_device_id()
-latency = page.get_selected_latency()
+    if model_path and device_id is not None:
+        start_listener(model_path, device_id, latency)
+    else:
+        page.set_status("⚠️ Selecciona modelo y dispositivo", "orange")
 
-if model_path and device_id is not None:
-    start_listener(model_path, device_id, latency)
-else:
-    page.set_status("⚠️ Selecciona modelo y dispositivo", "orange")
+    try:
+        page.run()
+    except KeyboardInterrupt:
+        print("\nInterrupción detectada. Cerrando sesión de escritorio...")
+    except Exception:
+        print("\nError inesperado en app de escritorio:")
+        traceback.print_exc()
+    finally:
+        on_app_close()
 
-page.run()
 
+if __name__ == "__main__":
+    main()

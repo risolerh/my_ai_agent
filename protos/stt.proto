@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package stt;
+
+service SttService {
+  // Bidirectional streaming RPC
+  // Client sends a stream of RecognizeRequest (first one invalidates config, rest audio)
+  // Server sends a stream of RecognizeResponse (partial/final results)
+  rpc StreamingRecognize (stream RecognizeRequest) returns (stream RecognizeResponse);
+}
+
+message RecognizeRequest {
+  oneof streaming_request {
+    StreamingConfig config = 1;
+    bytes audio_content = 2;
+  }
+}
+
+message StreamingConfig {
+  string strategy = 1; // "vosk" or "whisper"
+  string model_path = 2; // Optional: custom model path or size (e.g. "base" for whisper)
+  int32 sample_rate = 3; // e.g. 16000
+  string language = 4; // e.g. "en", "es"
+}
+
+message RecognizeResponse {
+  string text = 1;
+  float confidence = 2;
+  bool is_final = 3;
+  string language = 4; // Detected language
+  string type = 5; // "partial" or "final"
+}
