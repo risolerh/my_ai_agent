@@ -7,6 +7,7 @@ from typing import Optional, Callable, Awaitable, Dict, Any, List
 import websockets
 
 TTS_STREAM_URL = os.getenv("TTS_STREAM_URL", "ws://localhost:8000/ws/tts-stream")
+TTS_SOCKET_TIMEOUT = 25;
 
 def _ts():
     return datetime.now().strftime('%H:%M:%S.%f')[:-3]
@@ -42,7 +43,7 @@ class TTSStreamClient:
 
     async def connect(self):
         print(f"[{_ts()}] [TTS-CLIENT] connecting to {self.url}")
-        self._ws = await websockets.connect(self.url)
+        self._ws = await websockets.connect(self.url, open_timeout=TTS_SOCKET_TIMEOUT)
         greeting = await self._ws.recv()
         data = json.loads(greeting)
         voices = (

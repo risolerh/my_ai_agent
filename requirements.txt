@@ -1,9 +1,0 @@
-fastapi
-uvicorn[standard]
-requests
-websockets
-grpcio>=1.78.0
-grpcio-tools>=1.78.0
-protobuf
-sounddevice
-numpy

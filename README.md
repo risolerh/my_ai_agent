@@ -41,9 +41,15 @@ Servicios expuestos en host:
 
 ## Modo Desktop
 ```bash
-python main.py
+uv run python main.py
 ```
 
 `main.py` usa:
 - `modules/audio_listener.py` (captura micrófono + STT gRPC)
 - `modules/translate.py` (cliente de traducción gRPC)
+
+## Desarrollo local con uv
+```bash
+uv sync
+uv run uvicorn server:app --host 0.0.0.0 --port 8000
+```

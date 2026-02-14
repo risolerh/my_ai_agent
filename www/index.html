@@ -10,7 +10,7 @@
 </head>
 
 <body>
-    <h1>🎙️ AI Voice Translator Agent (v0.0.3)</h1>
+    <h1>🎙️ AI Voice Translator Agent (v0.1.0)</h1>
 
     <div class="main-controls">
         <!-- Language Settings -->
@@ -68,8 +68,7 @@
         <!-- Session Controls -->
         <div class="control-card session-bar">
             <div class="session-buttons">
-                <button id="startBtn" onclick="startStream()">Start Session</button>
-                <button id="stopBtn" onclick="stopStream()" disabled>End Session</button>
+                <button id="sessionBtn" onclick="toggleSession()">Start Session</button>
             </div>
 
             <div class="session-info">
@@ -77,6 +76,12 @@
                     <button id="muteBtn" onclick="toggleMute()" disabled>🎤 On</button>
                     <div class="visualizer-container">
                         <div id="visualizerBar" class="visualizer-bar"></div>
+                        <div id="visualizerThreshold" class="visualizer-threshold"></div>
+                    </div>
+                    <div class="visualizer-readout">
+                        <span id="audioRmsText">RMS 0.000</span>
+                        <span id="audioGateText">Gate 0.014</span>
+                        <span id="audioStateText">silence</span>
                     </div>
                 </div>
                 <span id="status" style="background-color: #eee;">Ready</span>
@@ -88,6 +93,7 @@
         <div id="log-header">
             <h3>Session Transcript</h3>
             <div class="window-controls">
+                <button id="clearConversationBtn" class="control-btn clear-transcript-btn" onclick="clearConversationHistory()" title="Clear conversation">Clear</button>
                 <button class="control-btn minimize" onclick="toggleLog('minimize')" title="Minimize">_</button>
                 <button class="control-btn maximize" onclick="toggleLog('maximize')" title="Maximize">□</button>
             </div>
@@ -98,6 +104,7 @@
     <script src="/static/js/audio-manager.js"></script>
     <script src="/static/js/tts-manager.js"></script>
     <script src="/static/js/visualizer.js"></script>
+    <script src="/static/js/barge-in-rms.js"></script>
     <script src="/static/js/main.js"></script>
     <script src="/static/js/message-handler.js"></script>
 </body>

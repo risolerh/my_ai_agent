@@ -2,5 +2,6 @@ __pycache__/
 models/
 output/
 venv/
+.venv/
 models_translate/
 modules/stt/__init__.py

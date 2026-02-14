@@ -11,6 +11,7 @@ import asyncio
 import os
 import uuid
 import logging
+import json
 from datetime import datetime
 from typing import Optional
 from modules.flow_logger import get_flow_logger
@@ -188,7 +189,7 @@ async def websocket_endpoint(
             try:
                 msg_type = msg.get("type", "unknown")
                 sent_counts[msg_type] = sent_counts.get(msg_type, 0) + 1
-                if msg_type in {"ready", "final", "agent", "tts_error", "tts_interrupted", "tts_barge_in", "tts_complete"}:
+                if msg_type in {"ready", "final", "agent", "tts_error", "tts_interrupted", "tts_barge_in", "tts_complete", "conversation_cleared"}:
                     flow_logger.event("ws.send", type=msg_type, status=msg.get("status"))
                 elif msg_type == "agent_chunk" and msg.get("status") in {"start", "done", "cancelled"}:
                     flow_logger.event("ws.send", type=msg_type, status=msg.get("status"))
@@ -250,7 +251,12 @@ async def websocket_endpoint(
                 flow_logger.event("agent.chunk", status=message.get("status"))
             asyncio.run_coroutine_threadsafe(send_message(message), loop)
         
-        def on_barge_in():
+        def on_barge_in(
+            playback_percent: Optional[float] = None,
+            played_audio_seconds: Optional[float] = None,
+            total_audio_seconds: Optional[float] = None,
+            played_text_percent: Optional[float] = None,
+        ):
             """Called from AudioService when user interrupts TTS."""
             nonlocal barge_in_count
             barge_in_count += 1
@@ -265,7 +271,14 @@ async def websocket_endpoint(
                     loop
                 )
             # Tell AudioService what the user actually heard
-            service.set_barge_in_context(spoken_text, full_response)
+            service.set_barge_in_context(
+                spoken_text,
+                full_response,
+                playback_percent=playback_percent,
+                played_audio_seconds=played_audio_seconds,
+                total_audio_seconds=total_audio_seconds,
+                played_text_percent=played_text_percent,
+            )
 
         def on_speaking_changed(is_speaking: bool):
             """Called when TTS starts/stops speaking."""
@@ -295,7 +308,54 @@ async def websocket_endpoint(
         
         # Process incoming audio stream
         while True:
-            data = await websocket.receive_bytes() # <--- AQUÍ RECIBE EL AUDIO
+            event = await websocket.receive()
+            event_type = event.get("type")
+
+            if event_type == "websocket.disconnect":
+                raise WebSocketDisconnect()
+
+            text_payload = event.get("text")
+            if text_payload is not None:
+                try:
+                    text_message = json.loads(text_payload)
+                except json.JSONDecodeError:
+                    flow_logger.event("ws.invalid_text_message", level=logging.WARNING)
+                    continue
+
+                msg_type = text_message.get("type")
+                if msg_type == "clear_conversation_history":
+                    service.clear_conversation_history()
+                    flow_logger.event("conversation.cleared_by_client")
+                    await send_message({
+                        "type": "conversation_cleared"
+                    })
+                elif msg_type == "barge_in":
+                    playback_percent = text_message.get("playback_percent")
+                    played_audio_seconds = text_message.get("played_audio_seconds")
+                    total_audio_seconds = text_message.get("total_audio_seconds")
+                    played_text_percent = text_message.get("played_text_percent")
+                    flow_logger.event(
+                        "barge_in.client_signal",
+                        playback_percent=playback_percent,
+                        played_audio_seconds=played_audio_seconds,
+                        total_audio_seconds=total_audio_seconds,
+                        played_text_percent=played_text_percent,
+                    )
+                    service.barge_in(
+                        playback_percent=playback_percent,
+                        played_audio_seconds=played_audio_seconds,
+                        total_audio_seconds=total_audio_seconds,
+                        played_text_percent=played_text_percent,
+                        force=True,
+                    )
+                else:
+                    flow_logger.event("ws.ignored_text_message", type=msg_type)
+                continue
+
+            data = event.get("bytes")
+            if data is None:
+                continue
+
             received_audio_chunks += 1
             received_audio_bytes += len(data)
             if received_audio_chunks == 1 or received_audio_chunks % 50 == 0:

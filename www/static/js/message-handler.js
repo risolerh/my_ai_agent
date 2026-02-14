@@ -13,6 +13,23 @@ let lastFinalSignature = '';
 let lastFinalAtMs = 0;
 const FINAL_DEDUP_WINDOW_MS = 2500;
 
+function currentTimestamp() {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
+}
+
+function resetMessageHistoryState() {
+    lastFinalSignature = '';
+    lastFinalAtMs = 0;
+    const streamEl = document.getElementById('agent-streaming');
+    if (streamEl) {
+        streamEl.remove();
+    }
+}
+
 function handleMessage(data) {
     // ── Partial transcription (live typing) ──────────────────────────
     if (data.type === 'partial') {
@@ -27,10 +44,12 @@ function handleMessage(data) {
         if (!currentPartialEl) {
             currentPartialEl = document.createElement('div');
             currentPartialEl.className = 'partial';
+            currentPartialEl.dataset.timestamp = currentTimestamp();
             logEl.appendChild(currentPartialEl);
         }
         currentPartialEl.dataset.lastText = text;
-        currentPartialEl.textContent = ">> " + text;
+        const partialTs = currentPartialEl.dataset.timestamp || currentTimestamp();
+        currentPartialEl.innerHTML = `<span class="entry-time">[${partialTs}]</span> >> ${text}`;
         logEl.scrollTop = logEl.scrollHeight;
     }
 
@@ -55,10 +74,11 @@ function handleMessage(data) {
         lastFinalAtMs = now;
 
         const container = document.createElement('div');
+        const entryTs = currentTimestamp();
 
         container.innerHTML = `
-            <div class="final"><b>[${inLang.toUpperCase()}]</b> ${originalText} <span style="font-size:0.8em;color:#aaa">(${data.confidence.toFixed(2)})</span></div>
-            <div class="translation"><b>[${outLang.toUpperCase()}]</b> ${data.translation}</div>
+            <div class="final"><span class="entry-time">[${entryTs}]</span> <b>[${inLang.toUpperCase()}]</b> ${originalText} <span style="font-size:0.8em;color:#aaa">(${data.confidence.toFixed(2)})</span></div>
+            <div class="translation"><span class="entry-time">[${entryTs}]</span> <b>[${outLang.toUpperCase()}]</b> ${data.translation}</div>
             <hr/>
         `;
         logEl.appendChild(container);
@@ -84,7 +104,10 @@ function handleMessage(data) {
     // ── TTS audio chunk ──────────────────────────────────────────────
     else if (data.type === 'tts_audio') {
         if (data.data) {
-            playTtsChunk(data.data, data.sample_rate).catch(() => { });
+            playTtsChunk(data.data, data.sample_rate, {
+                segment: data.segment,
+                text: data.text || ''
+            }).catch(() => { });
         }
     }
 
@@ -92,8 +115,9 @@ function handleMessage(data) {
     else if (data.type === 'tts_error') {
         const container = document.createElement('div');
         const errorText = data.error || "TTS error";
+        const entryTs = currentTimestamp();
         container.innerHTML = `
-            <div class="agent agent-error"><b>[TTS]</b> ${errorText}</div>
+            <div class="agent agent-error"><span class="entry-time">[${entryTs}]</span> <b>[TTS]</b> ${errorText}</div>
             <hr/>
         `;
         logEl.appendChild(container);
@@ -111,13 +135,20 @@ function handleMessage(data) {
         resetTtsPlayback();
     }
 
+    // ── Session conversation history cleared ──────────────────────────
+    else if (data.type === 'conversation_cleared') {
+        resetMessageHistoryState();
+        setStatus('Conversation cleared', '#e6f7ff');
+    }
+
     // ── Agent streaming chunks (live LLM output) ─────────────────────
     else if (data.type === 'agent_chunk') {
         if (data.status === 'start') {
             const container = document.createElement('div');
             container.id = 'agent-streaming';
             container.className = 'agent agent-streaming';
-            container.innerHTML = `<b>[AGENT • ${data.model || ''}]</b> <span class="agent-stream-text"></span><span class="agent-cursor">▊</span>`;
+            const entryTs = currentTimestamp();
+            container.innerHTML = `<span class="entry-time">[${entryTs}]</span> <b>[AGENT • ${data.model || ''}]</b> <span class="agent-stream-text"></span><span class="agent-cursor">▊</span>`;
             logEl.appendChild(container);
             logEl.scrollTop = logEl.scrollHeight;
         } else if (data.status === 'streaming') {
@@ -156,9 +187,10 @@ function handleMessage(data) {
         if (streamEl) streamEl.remove();
 
         const container = document.createElement('div');
+        const entryTs = currentTimestamp();
         if (data.status === 'ok') {
             container.innerHTML = `
-                <div class="agent"><b>[AGENT • ${data.model}]</b> ${data.response}</div>
+                <div class="agent"><span class="entry-time">[${entryTs}]</span> <b>[AGENT • ${data.model}]</b> ${data.response}</div>
                 <hr/>
             `;
             if (voiceEnabledEl.checked) {
@@ -167,7 +199,7 @@ function handleMessage(data) {
         } else {
             const errorText = data.error || "Agent error";
             container.innerHTML = `
-                <div class="agent agent-error"><b>[AGENT • ${data.model}]</b> ${errorText}</div>
+                <div class="agent agent-error"><span class="entry-time">[${entryTs}]</span> <b>[AGENT • ${data.model}]</b> ${errorText}</div>
                 <hr/>
             `;
         }

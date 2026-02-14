@@ -147,28 +147,24 @@ button:disabled {
     cursor: not-allowed;
 }
 
-#startBtn {
+#sessionBtn {
     background-color: #4caf50;
 }
 
-#startBtn:hover {
+#sessionBtn:hover {
     background-color: #388e3c;
 }
 
-#startBtn:disabled {
+#sessionBtn:disabled {
     background-color: #ccc;
 }
 
-#stopBtn {
+#sessionBtn.is-stop {
     background-color: #f44336;
 }
 
-#stopBtn:hover {
+#sessionBtn.is-stop:hover {
     background-color: #d32f2f;
-}
-
-#stopBtn:disabled {
-    background-color: #ccc;
 }
 
 #status {

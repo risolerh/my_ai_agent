@@ -10,6 +10,9 @@ class TTSManager {
         this.nextPlayTime = 0;
         this.bufferSeconds = 0.15;
         this.preferredSampleRate = 16000;
+        this.chunkTimeline = [];
+        this.totalAudioSeconds = 0;
+        this.totalTextChars = 0;
     }
 
     /**
@@ -54,6 +57,9 @@ class TTSManager {
         this.activeNodes = [];
         this.playQueue = [];
         this.nextPlayTime = 0;
+        this.chunkTimeline = [];
+        this.totalAudioSeconds = 0;
+        this.totalTextChars = 0;
     }
 
     /**
@@ -72,7 +78,7 @@ class TTSManager {
      * @param {string} base64Data - Base64 encoded audio data (WAV or raw PCM).
      * @param {number} sampleRate - Sample rate of the audio data.
      */
-    async playChunk(base64Data, sampleRate) {
+    async playChunk(base64Data, sampleRate, meta = {}) {
         this._ensureContext(sampleRate || 16000);
         
         if (this.context.state === 'suspended') {
@@ -114,12 +120,75 @@ class TTSManager {
             this.nextPlayTime = now + this.bufferSeconds;
         }
 
-        source.start(this.nextPlayTime);
+        const startAt = this.nextPlayTime;
+        source.start(startAt);
         this.nextPlayTime += audioBuffer.duration;
+
+        const text = typeof meta.text === 'string' ? meta.text : '';
+        const chunkMeta = {
+            startAt,
+            duration: audioBuffer.duration,
+            textChars: text.length,
+            ended: false
+        };
+        this.chunkTimeline.push(chunkMeta);
+        this.totalAudioSeconds += audioBuffer.duration;
+        this.totalTextChars += text.length;
 
         this.activeNodes.push(source);
         source.onended = () => {
             this.activeNodes = this.activeNodes.filter(n => n !== source);
+            chunkMeta.ended = true;
+        };
+    }
+
+    isSpeaking() {
+        if (!this.context) return false;
+        const now = this.context.currentTime;
+        return this.activeNodes.length > 0 || this.nextPlayTime > (now + 0.01);
+    }
+
+    getPlaybackStats() {
+        if (!this.context || this.chunkTimeline.length === 0) {
+            return {
+                played_audio_seconds: 0,
+                total_audio_seconds: 0,
+                playback_percent: 0,
+                played_text_percent: 0
+            };
+        }
+
+        const now = this.context.currentTime;
+        let playedAudioSeconds = 0;
+        let playedTextChars = 0;
+
+        for (const chunk of this.chunkTimeline) {
+            const chunkEnd = chunk.startAt + chunk.duration;
+            if (chunk.ended || now >= chunkEnd) {
+                playedAudioSeconds += chunk.duration;
+                playedTextChars += chunk.textChars;
+                continue;
+            }
+            if (now > chunk.startAt) {
+                const ratio = Math.max(0, Math.min(1, (now - chunk.startAt) / chunk.duration));
+                playedAudioSeconds += chunk.duration * ratio;
+                playedTextChars += chunk.textChars * ratio;
+            }
+        }
+
+        const totalAudioSeconds = Math.max(this.totalAudioSeconds, 0);
+        const playbackPercent = totalAudioSeconds > 0
+            ? (playedAudioSeconds / totalAudioSeconds) * 100
+            : 0;
+        const playedTextPercent = this.totalTextChars > 0
+            ? (playedTextChars / this.totalTextChars) * 100
+            : 0;
+
+        return {
+            played_audio_seconds: Number(playedAudioSeconds.toFixed(3)),
+            total_audio_seconds: Number(totalAudioSeconds.toFixed(3)),
+            playback_percent: Number(Math.max(0, Math.min(100, playbackPercent)).toFixed(1)),
+            played_text_percent: Number(Math.max(0, Math.min(100, playedTextPercent)).toFixed(1))
         };
     }
 

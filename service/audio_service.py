@@ -189,7 +189,7 @@ class AudioService:
     def set_on_barge_in(self, callback: Callable):
         """
         Set callback for barge-in events (user interrupts TTS).
-        Callback signature: callback()
+        Callback signature: callback(**kwargs)
         """
         self._on_barge_in = callback
 
@@ -220,11 +220,30 @@ class AudioService:
                 continue
             self._run_agent(prompt_text)
 
-    def set_barge_in_context(self, spoken_text: str, full_response: str):
+    def set_barge_in_context(
+        self,
+        spoken_text: str,
+        full_response: str,
+        playback_percent: Optional[float] = None,
+        played_audio_seconds: Optional[float] = None,
+        total_audio_seconds: Optional[float] = None,
+        played_text_percent: Optional[float] = None,
+    ):
         """
         Called by server.py during barge-in to record what the user
         actually heard (spoken_text) vs the full LLM response.
         """
+        # If we received frontend playback metrics, prefer them to estimate heard text.
+        if full_response and playback_percent is not None:
+            try:
+                ratio = max(0.0, min(1.0, float(playback_percent) / 100.0))
+                estimated_chars = int(len(full_response) * ratio)
+                estimated_spoken = full_response[:estimated_chars].strip()
+                if estimated_spoken:
+                    spoken_text = estimated_spoken
+            except (TypeError, ValueError):
+                pass
+
         with self._barge_in_lock:
             self._last_spoken_text = spoken_text
             self._last_full_response = full_response
@@ -235,18 +254,29 @@ class AudioService:
                     "transcript": "",  # transcript was already saved in normal flow
                     "response": full_response,
                     "interrupted": True,
-                    "spoken": spoken_text
+                    "spoken": spoken_text,
+                    "playback_percent": playback_percent,
+                    "played_audio_seconds": played_audio_seconds,
+                    "total_audio_seconds": total_audio_seconds,
+                    "played_text_percent": played_text_percent,
                 })
                 if len(self._agent_history) > AGENT_HISTORY_LIMIT:
                     self._agent_history = self._agent_history[-AGENT_HISTORY_LIMIT:]
 
-    def barge_in(self):
+    def barge_in(
+        self,
+        playback_percent: Optional[float] = None,
+        played_audio_seconds: Optional[float] = None,
+        total_audio_seconds: Optional[float] = None,
+        played_text_percent: Optional[float] = None,
+        force: bool = False,
+    ):
         """
         Called when user starts speaking while TTS is active or Agent is generating.
         Cancels current LLM generation, clears pending work, stops turn timer.
         """
         # Allow barge-in if TTS is speaking OR Agent is generating
-        if not self._tts_speaking and not self._is_agent_generating:
+        if not force and not self._tts_speaking and not self._is_agent_generating:
             return
 
         print(f"[{_ts()}] [BARGE-IN] User interrupted, cancelling agent + TTS")
@@ -291,7 +321,12 @@ class AudioService:
 
         # Notify caller (server.py) to stop TTS and get spoken context
         if self._on_barge_in:
-            self._on_barge_in()
+            self._on_barge_in(
+                playback_percent=playback_percent,
+                played_audio_seconds=played_audio_seconds,
+                total_audio_seconds=total_audio_seconds,
+                played_text_percent=played_text_percent,
+            )
 
 
     def _enqueue_agent_prompt(self, prompt_text: str):
@@ -312,6 +347,39 @@ class AudioService:
                 self._flow("agent.prompt_queued", prompt_len=len(prompt_text), replaced_existing=True)
             except queue.Full:
                 return
+
+    def clear_conversation_history(self):
+        """
+        Clear per-session conversation context used by the Agent.
+        This removes LLM history and pending turn context for future prompts.
+        """
+        history_items = len(self._agent_history)
+
+        # Cancel in-flight generation context and drop queued prompts.
+        self._agent_cancelled.set()
+        if self._agent_queue:
+            try:
+                while not self._agent_queue.empty():
+                    self._agent_queue.get_nowait()
+            except queue.Empty:
+                pass
+
+        # Clear buffered turn text waiting for silence timeout.
+        with self._turn_lock:
+            if self._turn_timer:
+                self._turn_timer.cancel()
+                self._turn_timer = None
+            self._turn_buffer.clear()
+
+        # Reset conversation memory and barge-in context.
+        self._agent_history.clear()
+        self._current_agent_prompt = None
+        with self._barge_in_lock:
+            self._last_spoken_text = ""
+            self._last_full_response = ""
+        self._last_partial_text = ""
+
+        self._flow("conversation.cleared", cleared_items=history_items)
 
     def shutdown(self):
         # Cancel turn timer
@@ -486,6 +554,12 @@ class AudioService:
             if item.get("interrupted"):
                 spoken = item.get("spoken", "")
                 full = item.get("response", "")
+                played_pct = item.get("playback_percent")
+                if played_pct is not None:
+                    lines.append(f"User interrupted playback at ~{played_pct}% of the TTS audio.")
+                text_pct = item.get("played_text_percent")
+                if text_pct is not None:
+                    lines.append(f"Estimated heard text coverage: ~{text_pct}% of the response.")
                 if spoken:
                     lines.append(f"Your response (user heard this part): {spoken}")
                     lines.append(f"Your response (user did NOT hear this part): {full[len(spoken):].strip()}")

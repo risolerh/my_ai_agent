@@ -16,17 +16,15 @@ Esto levanta el gateway (`service-agent-voice`) y los microservicios gRPC/REST d
 Si ya tienes los microservicios corriendo por separado, puedes levantar solo este servicio:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-uvicorn server:app --host 0.0.0.0 --port 8000
+uv sync
+uv run uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
 ## Opción local (desktop)
 Con los mismos servicios gRPC ya corriendo:
 
 ```bash
-python main.py
+uv run python main.py
 ```
 
 Ajusta hosts/puertos con variables de entorno:

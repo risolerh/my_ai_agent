@@ -10,12 +10,14 @@ const SERVICES = {
     ollamaModelsPath: '/api/ollama-models',
     streamPath: '/ws/stream'
 };
+const SESSION_CONFIG_KEY = 'ai_voice_translator.session_config.v1';
 
 const ws = { current: null }; // Wrapper to hold WS reference
 const streamState = {
     starting: false,
     stopping: false
 };
+const bargeInDetector = new window.BargeInRmsDetector();
 
 function hasActiveSocket() {
     return Boolean(
@@ -42,8 +44,7 @@ const agentModelEl = document.getElementById('agentModel');
 const voiceEnabledEl = document.getElementById('voiceEnabled');
 const voiceSelectEl = document.getElementById('voiceSelect');
 
-const startBtn = document.getElementById('startBtn');
-const stopBtn = document.getElementById('stopBtn');
+const sessionBtn = document.getElementById('sessionBtn');
 const logEl = document.getElementById('log');
 const inputLangEl = document.getElementById('inputLang');
 const outputLangEl = document.getElementById('outputLang');
@@ -56,6 +57,47 @@ let ttsVoices = [];
 let inputLangCodeById = {};
 let currentInputLangCode = '';
 
+function hasSelectOption(selectEl, value) {
+    return Array.from(selectEl.options).some(opt => opt.value === value);
+}
+
+function readSessionConfig() {
+    try {
+        const raw = sessionStorage.getItem(SESSION_CONFIG_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function saveSessionConfig() {
+    try {
+        const payload = {
+            inputLang: inputLangEl.value || '2',
+            outputLang: outputLangEl.value || 'es',
+            agentEnabled: Boolean(agentEnabledEl.checked),
+            agentModel: agentModelEl.value || '',
+            voiceEnabled: Boolean(voiceEnabledEl.checked),
+            voiceId: voiceSelectEl.value || ''
+        };
+        sessionStorage.setItem(SESSION_CONFIG_KEY, JSON.stringify(payload));
+    } catch (e) {
+        // Ignore storage failures (private mode/quota/security settings).
+    }
+}
+
+function syncAgentVoiceControls() {
+    agentModelEl.disabled = !agentEnabledEl.checked;
+    if (!agentEnabledEl.checked) {
+        voiceEnabledEl.checked = false;
+    }
+    voiceEnabledEl.disabled = !agentEnabledEl.checked;
+    const controlsLocked = inputLangEl.disabled;
+    voiceSelectEl.disabled = controlsLocked || !agentEnabledEl.checked || !voiceEnabledEl.checked;
+}
+
 function setControlsDisabled(disabled) {
     inputLangEl.disabled = disabled;
     outputLangEl.disabled = disabled;
@@ -66,9 +108,7 @@ function setControlsDisabled(disabled) {
         voiceEnabledEl.disabled = !agentEnabledEl.checked;
         voiceSelectEl.disabled = true;
     } else {
-        agentModelEl.disabled = !agentEnabledEl.checked;
-        voiceEnabledEl.disabled = !agentEnabledEl.checked;
-        voiceSelectEl.disabled = !agentEnabledEl.checked || !voiceEnabledEl.checked;
+        syncAgentVoiceControls();
     }
 }
 
@@ -109,13 +149,81 @@ function resetTtsPlayback() {
     ttsManager.reset();
 }
 
-async function playTtsChunk(base64Data, sampleRate) {
+function clearSessionTranscriptView() {
+    logEl.innerHTML = '';
+    currentPartialEl = null;
+    if (typeof resetMessageHistoryState === 'function') {
+        resetMessageHistoryState();
+    }
+}
+
+function clearConversationHistory() {
+    clearSessionTranscriptView();
+
+    const socket = ws.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+    }
+
+    try {
+        socket.send(JSON.stringify({ type: 'clear_conversation_history' }));
+    } catch (e) {
+        console.error('Failed to clear conversation history', e);
+        setStatus('Clear failed', '#ffd4d4');
+    }
+}
+
+async function playTtsChunk(base64Data, sampleRate, meta = {}) {
     if (!voiceEnabledEl.checked) return;
-    await ttsManager.playChunk(base64Data, sampleRate);
+    await ttsManager.playChunk(base64Data, sampleRate, meta);
+}
+
+function sendImmediateBargeIn(threshold) {
+    const socket = ws.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+    const stats = ttsManager.getPlaybackStats();
+    resetTtsPlayback();
+    setStatus('Interrumpido', '#ffe7c2');
+
+    try {
+        socket.send(JSON.stringify({
+            type: 'barge_in',
+            barge_in_threshold: Number(threshold.toFixed(4)),
+            ...stats
+        }));
+    } catch (e) {
+        console.warn('barge_in send failed', e);
+    }
+}
+
+function maybeTriggerBargeIn(int16Data) {
+    const result = bargeInDetector.process(int16Data, ttsManager.isSpeaking());
+
+    if (typeof updateBargeInVisualizer === 'function') {
+        updateBargeInVisualizer({
+            rms: result.rms,
+            threshold: result.threshold,
+            visMax: result.visMax,
+            state: result.state
+        });
+    }
+
+    if (result.triggered) {
+        sendImmediateBargeIn(result.threshold);
+    }
 }
 
 // Load configuration on startup
 window.addEventListener('DOMContentLoaded', async () => {
+    const savedConfig = readSessionConfig();
+    if (savedConfig && typeof savedConfig.agentEnabled === 'boolean') {
+        agentEnabledEl.checked = savedConfig.agentEnabled;
+    }
+    if (savedConfig && typeof savedConfig.voiceEnabled === 'boolean') {
+        voiceEnabledEl.checked = savedConfig.voiceEnabled;
+    }
+
     try {
         // Fetch/Populate Input Models
         const modelsRes = await fetch(getHttpUrl(SERVICES.modelsPath));
@@ -132,6 +240,9 @@ window.addEventListener('DOMContentLoaded', async () => {
             if (m.id === '2') opt.selected = true; // Default to English Complete (ID 2)
             inputLangEl.appendChild(opt);
         });
+        if (savedConfig?.inputLang && hasSelectOption(inputLangEl, savedConfig.inputLang)) {
+            inputLangEl.value = savedConfig.inputLang;
+        }
         currentInputLangCode = inputLangCodeById[inputLangEl.value] || '';
 
         // Fetch/Populate Output Languages
@@ -144,6 +255,9 @@ window.addEventListener('DOMContentLoaded', async () => {
             if (l.code === 'es') opt.selected = true;
             outputLangEl.appendChild(opt);
         });
+        if (savedConfig?.outputLang && hasSelectOption(outputLangEl, savedConfig.outputLang)) {
+            outputLangEl.value = savedConfig.outputLang;
+        }
 
         const ollamaRes = await fetch(getHttpUrl(SERVICES.ollamaModelsPath));
         if (ollamaRes.ok) {
@@ -159,6 +273,9 @@ window.addEventListener('DOMContentLoaded', async () => {
                 agentModelEl.appendChild(opt);
             });
         }
+        if (savedConfig?.agentModel && hasSelectOption(agentModelEl, savedConfig.agentModel)) {
+            agentModelEl.value = savedConfig.agentModel;
+        }
 
         const ttsVoicesRes = await fetch(getHttpUrl('/api/tts-voices'));
         if (ttsVoicesRes.ok) {
@@ -166,36 +283,46 @@ window.addEventListener('DOMContentLoaded', async () => {
             const ttsList = ttsData.voices || [];
             ttsVoices = normalizeVoices(ttsList);
             updateVoiceOptions();
+            if (savedConfig?.voiceId && hasSelectOption(voiceSelectEl, savedConfig.voiceId)) {
+                voiceSelectEl.value = savedConfig.voiceId;
+            }
         }
 
         setControlsDisabled(false);
+        syncAgentVoiceControls();
+
         agentEnabledEl.addEventListener('change', () => {
             if (!agentEnabledEl.disabled) {
-                agentModelEl.disabled = !agentEnabledEl.checked;
-                if (!agentEnabledEl.checked) {
-                    voiceEnabledEl.checked = false;
-                }
-                voiceEnabledEl.disabled = !agentEnabledEl.checked;
-                voiceSelectEl.disabled = !agentEnabledEl.checked || !voiceEnabledEl.checked;
+                syncAgentVoiceControls();
+                saveSessionConfig();
             }
         });
         voiceEnabledEl.addEventListener('change', () => {
             if (!voiceEnabledEl.disabled) {
-                const controlsLocked = inputLangEl.disabled;
-                voiceSelectEl.disabled = controlsLocked || !voiceEnabledEl.checked;
                 if (!voiceEnabledEl.checked) {
                     resetTtsPlayback();
                 }
+                syncAgentVoiceControls();
+                saveSessionConfig();
             }
+        });
+        agentModelEl.addEventListener('change', () => {
+            saveSessionConfig();
+        });
+        voiceSelectEl.addEventListener('change', () => {
+            saveSessionConfig();
         });
         inputLangEl.addEventListener('change', () => {
             currentInputLangCode = inputLangCodeById[inputLangEl.value] || '';
             updateVoiceOptions();
+            saveSessionConfig();
         });
         outputLangEl.addEventListener('change', () => {
             updateVoiceOptions();
+            saveSessionConfig();
         });
         updateVoiceOptions();
+        saveSessionConfig();
 
     } catch (e) {
         console.error("Error loading config", e);
@@ -210,21 +337,35 @@ function setStatus(msg, color) {
 
 function setButtonsState(state) {
     if (state === 'connecting') {
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
+        sessionBtn.disabled = false;
+        sessionBtn.textContent = 'End Session';
+        sessionBtn.classList.add('is-stop');
         muteBtn.disabled = false;
         setControlsDisabled(true);
     } else if (state === 'streaming') {
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
+        sessionBtn.disabled = false;
+        sessionBtn.textContent = 'End Session';
+        sessionBtn.classList.add('is-stop');
         muteBtn.disabled = false;
         setControlsDisabled(true);
     } else {
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
-
+        sessionBtn.disabled = false;
+        sessionBtn.textContent = 'Start Session';
+        sessionBtn.classList.remove('is-stop');
+        muteBtn.disabled = true;
         setControlsDisabled(false);
     }
+}
+
+function toggleSession() {
+    if (streamState.starting || streamState.stopping) {
+        return;
+    }
+    if (hasActiveSocket() || audioManager.isActive()) {
+        stopStream();
+        return;
+    }
+    startStream();
 }
 
 async function startStream() {
@@ -309,6 +450,7 @@ async function startAudio(socket) {
     try {
         await audioManager.start(
             (data) => {
+                maybeTriggerBargeIn(data);
                 if (ws.current === socket && socket.readyState === WebSocket.OPEN) {
                     socket.send(data);
                 }
@@ -353,6 +495,7 @@ function stopStream(fromSocketClose = false) {
     setStatus('', '#eee');
     streamState.starting = false;
     streamState.stopping = false;
+    bargeInDetector.reset();
 }
 
 
