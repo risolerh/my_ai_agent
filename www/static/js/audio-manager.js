@@ -2,6 +2,9 @@
  * AudioManager.js
  * Handles microphone access, AudioContext, and AudioWorklet setup.
  */
+
+URL_PROCESSOR = 'static/js/pcm-processor.js';
+
 class AudioManager {
     constructor() {
         this.stream = null;
@@ -42,7 +45,7 @@ class AudioManager {
             this.audioContext = new AudioContext({ sampleRate: 16000 });
 
             // Add the AudioWorklet module
-            await this.audioContext.audioWorklet.addModule('/static/js/processor.js');
+            await this.audioContext.audioWorklet.addModule(URL_PROCESSOR);
 
             const source = this.audioContext.createMediaStreamSource(this.stream);
             const workletNode = new AudioWorkletNode(this.audioContext, 'pcm-processor');

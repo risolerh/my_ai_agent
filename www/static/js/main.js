@@ -8,8 +8,8 @@ const SERVICES = {
     modelsPath: 'api/models',
     languagesPath: 'api/languages',
     ollamaModelsPath: 'api/ollama-models',
+    ttVoices: 'api/tts-voices',
     streamPath: 'ws/stream',
-    ttVoices: 'api/tts-voices'
 };
 const SESSION_CONFIG_KEY = 'ai_voice_translator.session_config.v1';
 
