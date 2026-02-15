@@ -32,11 +32,12 @@ function getHttpUrl(path) {
     return `${base}${path}`;
 }
 
+
 function getWsUrl(path, params) {
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const base = SERVICES.wsBase || `${wsProtocol}//${window.location.host}`;
+    const baseRaw = document.querySelector('base')?.href || window.location.origin;
+    const wsBase = SERVICES.wsBase || baseRaw.replace(/^http/, 'ws');  // magia aquí ✨
     const query = params ? `?${params.toString()}` : '';
-    return `${base}${path}${query}`;
+    return `${wsBase}${path}${query}`;
 }
 
 const statusEl = document.getElementById('status');
