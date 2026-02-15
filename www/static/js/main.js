@@ -5,10 +5,11 @@ const ttsManager = new TTSManager();
 const SERVICES = {
     httpBase: '',
     wsBase: '',
-    modelsPath: '/api/models',
-    languagesPath: '/api/languages',
-    ollamaModelsPath: '/api/ollama-models',
-    streamPath: '/ws/stream'
+    modelsPath: 'api/models',
+    languagesPath: 'api/languages',
+    ollamaModelsPath: 'api/ollama-models',
+    streamPath: 'ws/stream',
+    ttVoices: 'api/tts-voices'
 };
 const SESSION_CONFIG_KEY = 'ai_voice_translator.session_config.v1';
 
@@ -27,7 +28,7 @@ function hasActiveSocket() {
 }
 
 function getHttpUrl(path) {
-    const base = SERVICES.httpBase || window.location.origin;
+    const base = SERVICES.httpBase;
     return `${base}${path}`;
 }
 
@@ -277,7 +278,7 @@ window.addEventListener('DOMContentLoaded', async () => {
             agentModelEl.value = savedConfig.agentModel;
         }
 
-        const ttsVoicesRes = await fetch(getHttpUrl('/api/tts-voices'));
+        const ttsVoicesRes = await fetch(getHttpUrl(SERVICES.ttVoices));
         if (ttsVoicesRes.ok) {
             const ttsData = await ttsVoicesRes.json();
             const ttsList = ttsData.voices || [];
