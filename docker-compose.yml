@@ -1,3 +1,4 @@
+# Gateway compose using a single shared external network.
 services:
   service-agent-voice:
     image: service-agent-voice:latest
@@ -9,16 +10,25 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # External gRPC/HTTP routes
-      - STT_SERVICE_HOST=${STT_SERVICE_HOST:-host.docker.internal}
-      - STT_SERVICE_PORT=${STT_SERVICE_PORT:-5002}
-      - TRANSLATE_SERVICE_HOST=${TRANSLATE_SERVICE_HOST:-host.docker.internal}
-      - TRANSLATE_SERVICE_PORT=${TRANSLATE_SERVICE_PORT:-5001}
-      - TTS_HTTP_URL=${TTS_HTTP_URL:-http://host.docker.internal:8004}
-      - TTS_STREAM_URL=${TTS_STREAM_URL:-ws://host.docker.internal:8004/ws/tts-stream}
+      # Internal routing via shared Docker network.
+      - STT_SERVICE_HOST=${STT_SERVICE_HOST:-service-stt}
+      - STT_SERVICE_PORT=${STT_SERVICE_PORT:-50052}
+      - TRANSLATE_SERVICE_HOST=${TRANSLATE_SERVICE_HOST:-service-translate}
+      - TRANSLATE_SERVICE_PORT=${TRANSLATE_SERVICE_PORT:-50051}
+      - TTS_HTTP_URL=${TTS_HTTP_URL:-http://service-tts:8000}
+      - TTS_STREAM_URL=${TTS_STREAM_URL:-ws://service-tts:8000/ws/tts-stream}
+      # External Ollama endpoint (host or separate container/service).
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://192.168.1.2:11434}
       # Structured flow logs for conversation tracing
       - FLOW_LOG_LEVEL=${FLOW_LOG_LEVEL:-INFO}
       - FLOW_LOG_PARTIALS=${FLOW_LOG_PARTIALS:-0}
       - FLOW_LOG_DISABLED=${FLOW_LOG_DISABLED:-0}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+    networks:
+      - shared_net
+
+networks:
+  shared_net:
+    external: true
+    name: ${SHARED_DOCKER_NETWORK:-compose}

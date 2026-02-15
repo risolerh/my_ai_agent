@@ -1,24 +1,21 @@
 # Docker Instructions
 
-Este repositorio funciona como **gateway** y depende de microservicios externos (`service_stt`, `service_translate`, `service-tts`).
+Este repositorio funciona como **gateway** y depende de microservicios externos (`service-stt`, `service-translate`, `service-tts`).
 
-## Levantar stack completo
+## Levantar gateway
 
 ```bash
 docker compose up --build
 ```
 
-Incluye:
+Levanta únicamente:
 - `service-agent-voice` (gateway + frontend)
-- `service-stt`
-- `service-translate`
-- `service-tts`
 
 ## URLs/puertos esperados
 - Agent: `http://localhost:8000`
-- STT: gRPC `localhost:5002`, REST `localhost:8003`
-- Translate: gRPC `localhost:5001`, REST `localhost:8002`
-- TTS: gRPC `localhost:5003`, REST/WS `localhost:8004`
+- STT externo: gRPC `localhost:5002`
+- Translate externo: gRPC `localhost:5001`
+- TTS externo: REST/WS `localhost:8004` (gRPC opcional `localhost:5003`)
 
 ## Verificación rápida
 1. Abrir `http://localhost:8000`.

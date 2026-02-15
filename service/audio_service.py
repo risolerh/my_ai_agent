@@ -11,6 +11,19 @@ from modules.model_selector import AVAILABLE_MODELS, MODELS_DIR
 from service.ollama_client import OllamaClient
 from modules.flow_logger import FlowLogger
 
+LANGUAGE_NAMES = {
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+}
+
 def _ts():
     return datetime.now().strftime('%H:%M:%S.%f')[:-3]
 
@@ -537,12 +550,14 @@ class AudioService:
 
 
     def _format_agent_prompt(self, current_text: str) -> str:
+        target_lang_name = LANGUAGE_NAMES.get(self.output_lang, self.output_lang)
+        
         system_prompt = [
             "System:",
             "Always respond in a friendly tone.",
             "Keep responses short.",
             "Use only plain text (no markdown).",
-            "Respond in the same language as the user input.",
+            f"Respond in {target_lang_name}.",
             "If your previous response was interrupted by the user, do not repeat what they already heard. Respond to their new input directly."
         ]
         if not self._agent_history:
@@ -719,3 +734,32 @@ class AudioService:
         
         # Process audio in background thread (Vosk is blocking)
         await asyncio.to_thread(self.processor.process, data)
+
+    def flush_utterance(self) -> bool:
+        """
+        Force end-of-utterance processing for push-to-talk workflows.
+        Returns True when text was flushed/emitted, False for silence/no speech.
+        """
+        if not self.processor:
+            return False
+
+        had_text = False
+        flush_method = getattr(self.processor, "flush", None)
+
+        if callable(flush_method):
+            try:
+                had_text = bool(flush_method())
+            except Exception as e:
+                print(f"[{_ts()}] STT flush error: {e}")
+                self._flow("stt.flush_error", level=logging.ERROR, error=str(e))
+                had_text = False
+        else:
+            # Fallback for processors without flush support.
+            try:
+                self.processor.reset()
+            except Exception as e:
+                print(f"[{_ts()}] STT reset fallback error: {e}")
+                self._flow("stt.reset_error", level=logging.ERROR, error=str(e))
+
+        self._flow("stt.flush", had_text=had_text)
+        return had_text

@@ -6,7 +6,7 @@ from typing import Optional, Callable, Awaitable, Dict, Any, List
 
 import websockets
 
-TTS_STREAM_URL = os.getenv("TTS_STREAM_URL", "ws://localhost:8000/ws/tts-stream")
+TTS_STREAM_URL = os.getenv("TTS_STREAM_URL", "ws://127.0.0.1:8004/ws/tts-stream")
 TTS_SOCKET_TIMEOUT = 25;
 
 def _ts():

@@ -2,7 +2,7 @@
 
 ## Requisitos
 - Docker + Docker Compose
-- NVIDIA Container Toolkit (si vas a usar GPU en STT/Translate/TTS)
+- Servicios externos accesibles de STT, Translate y TTS
 
 ## Opción recomendada
 
@@ -10,7 +10,7 @@
 docker compose up --build
 ```
 
-Esto levanta el gateway (`service-agent-voice`) y los microservicios gRPC/REST de STT, Translate y TTS.
+Esto levanta solo el gateway (`service-agent-voice`), que se conecta a STT/Translate/TTS externos.
 
 ## Opción local (solo gateway)
 Si ya tienes los microservicios corriendo por separado, puedes levantar solo este servicio:
@@ -24,6 +24,7 @@ uv run uvicorn server:app --host 0.0.0.0 --port 8000
 Con los mismos servicios gRPC ya corriendo:
 
 ```bash
+uv sync --extra desktop
 uv run python main.py
 ```
 

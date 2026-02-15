@@ -1,6 +1,7 @@
 __pycache__
 venv
 .venv
+.uv-cache
 models
 models_translate
 output

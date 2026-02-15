@@ -33,7 +33,7 @@ TRANSLATION_LANGUAGES = {
     "pt": "Portuguese"
 }
 
-TTS_HTTP_URL = os.getenv("TTS_HTTP_URL", "http://localhost:8000")
+TTS_HTTP_URL = os.getenv("TTS_HTTP_URL", "http://127.0.0.1:8004")
 
 app.add_middleware(
     CORSMiddleware,
