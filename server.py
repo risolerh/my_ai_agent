@@ -111,6 +111,36 @@ DEFAULT_OLLAMA_MODEL = OLLAMA_MODELS[0] if OLLAMA_MODELS else ""
 DEFAULT_INPUT_MODEL_ID = "2" # Default to English Complete
 DEFAULT_OUTPUT_LANG = os.getenv("OUTPUT_LANG", "es")
 
+from service.translator_service import TranslatorService
+from fastapi import UploadFile, File, Form
+
+translator_service = TranslatorService()
+
+@app.post("/api/translate-audio")
+async def translate_audio_endpoint(
+    file: UploadFile = File(...),
+    input_lang: str = Form("2"),
+    output_lang: str = Form("es"),
+    voice_id: str = Form(""),
+    output_format: str = Form("wav")
+):
+    """
+    Process a full audio file: STT -> Translate -> TTS
+    Returns: JSON with original text, translation, and audio base64.
+    """
+    audio_bytes = await file.read()
+    
+    result = await translator_service.process_audio(
+        audio_data=audio_bytes,
+        input_lang_id=input_lang,
+        output_lang_code=output_lang,
+        voice_id=voice_id,
+        output_format=output_format
+    )
+    
+    return result
+
+
 @app.websocket("/ws/stream")
 async def websocket_endpoint(
     websocket: WebSocket,
